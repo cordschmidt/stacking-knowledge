@@ -35,7 +35,7 @@ Clean up or restructure code without changing functionality (e.g., modularizing 
 
 Add or update datasets, data loading, preprocessing, or tokenization code
 
-## 📦 Dependencies / Env
+## 📦 Dependencies / Env / Setup / Config
 **:package:** 
 
 Add or update dependencies, environment configs, or setup scripts
