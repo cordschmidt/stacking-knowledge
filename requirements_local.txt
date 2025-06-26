@@ -1,0 +1,6 @@
+python-dotenv
+hydra-core
+datasets
+omegaconf
+transformers
+wandb
