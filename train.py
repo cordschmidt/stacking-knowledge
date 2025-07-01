@@ -6,7 +6,6 @@ from hydra.core.config_store import ConfigStore
 
 # Local imports
 from src.config import BabyLMConfig
-from src.evaluator import collect_results
 from src.utils.data_and_model_loading import load_dataset_model_and_tokenizer
 from src.utils.setup_environment import setup_environment
 from src.utils.trainer_init import create_trainer
@@ -38,8 +37,8 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer, training_args):
     # Since 'load_best_model_at_end=True' is set in TrainingArguments, the best checkpoint is already loaded before this evaluation.
     trainer.evaluate(metric_key_prefix="eval_best")
 
-    # Collect and aggregate evaluation results from the output directory
-    collect_results(os.path.join(trainer.args.output_dir, "lm_model"))
+    # TODO: Collect and aggregate evaluation results from the output directory, this needs to be adjusted when BabyLM 2025 eval pipeline is incorporated
+    # collect_results(os.path.join(trainer.args.output_dir, "lm_model"))
 
     # Save the best model checkpoint explicitly to a "best_model" subdirectory
     trainer.save_model(output_dir=os.path.join(training_args.output_dir, "best_model"))
