@@ -7,7 +7,7 @@ from datasets import DatasetDict, load_dataset
 from src.config import BabyLMConfig
 from src.tokenizer import load_tokenizer
 from src.models import load_base_model
-from src.utils.data import DatasetPreprocessor
+from src.utils.dataset_preprocessor import DatasetPreprocessor
 
 DRY_RUN_SUBSAMPLE_FACTOR = 1000 // (10 if torch.cuda.device_count() > 1 else 1)
 
