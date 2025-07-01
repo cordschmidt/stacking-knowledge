@@ -33,12 +33,6 @@ def load_dataset_model_and_tokenizer(cfg: BabyLMConfig):
     logger.info("Initializing model")
     model = load_base_model(cfg)
 
-    # Get number of parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"Total parameters: {total_params:,}")
-    logger.info(f"Trainable parameters: {trainable_params:,}")
-
     # Check tokenizer & vocab size validity
     assert (
             tokenizer.vocab_size == model.config.vocab_size
