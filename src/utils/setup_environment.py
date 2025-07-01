@@ -1,11 +1,13 @@
 import logging
 import os
+import random
+import numpy as np
+import torch
 
 from dotenv import load_dotenv
 from omegaconf import OmegaConf
 
 from src.config import BabyLMConfig
-from src.utils.setup import set_seed
 
 DRY_RUN_TRAIN_STEPS = 100
 DRY_RUN_WARMUP_STEPS = 10
@@ -57,3 +59,18 @@ def setup_environment(cfg: BabyLMConfig):
     # Adjust training parameters in dry run for faster testing & debugging
     if cfg.experiment.dry_run:
         adjust_params_for_dry_run(cfg=cfg)
+
+def set_seed(seed: int) -> None:
+    """Sets seed for reproducibility"""
+    if seed < 0:
+        logger.warning("Skipping seed setting for reproducibility")
+        logger.warning(
+            "If you would like to set a seed, set seed to a positive value in config"
+        )
+        return
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available() > 0:
+        torch.cuda.manual_seed_all(seed)
