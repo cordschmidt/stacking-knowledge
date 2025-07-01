@@ -1,5 +1,3 @@
-"""Class for preprocessing the data, including tokenization."""
-
 import string
 from collections import defaultdict
 from typing import Dict, List, Tuple
