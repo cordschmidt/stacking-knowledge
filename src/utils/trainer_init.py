@@ -3,7 +3,7 @@ import os
 from transformers.training_args import TrainingArguments
 
 from src.config import BabyLMConfig
-from src.trainer import CustomTrainer
+from src.custom_trainer import CustomTrainer
 
 def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_dataset, curriculum_learning_table):
     # Create a TrainingArguments object which configures the Hugging Face Trainer behavior
