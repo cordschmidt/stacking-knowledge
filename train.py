@@ -6,10 +6,10 @@ from hydra.core.config_store import ConfigStore
 
 # Local imports
 from src.config import BabyLMConfig
-from src.utils.data_and_model_loading import load_dataset_model_and_tokenizer
-from src.utils.setup_environment import setup_environment
-from src.utils.trainer_init import create_trainer
-from src.utils.wandb_logging import enable_wandb_logging
+from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer
+from src.helper.setup_environment import setup_environment
+from src.helper.trainer_init import create_trainer
+from src.helper.wandb_logging import enable_wandb_logging
 
 # Logger for this file
 logger = logging.getLogger(__name__)
