@@ -18,11 +18,13 @@ from tqdm import tqdm
 from transformers.modeling_utils import unwrap_model
 
 # Local imports
+from .config import BabyLMConfig
+# Data curriculum related
 from .data_curriculum.datasampler import CurriculumSampler, DistributedCurriculumSampler
 from .data_curriculum.difficulty_scorer import get_difficulty_scorer
 from .data_curriculum.pacing_fn import get_pacing_fn
-from .config import BabyLMConfig
 from .dataloader import CurriculumDataLoader
+
 from .evaluator import BlimpEvaluator, FinetuneEvaluator
 from src.utils.data import base_collate_fn
 from src.utils.inference import compute_trainer_perplexity, prepare_dataset_for_ppl_inference
