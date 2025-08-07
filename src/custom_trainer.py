@@ -26,7 +26,7 @@ from .data_curriculum.pacing_fn import get_pacing_fn
 from .dataloader import CurriculumDataLoader
 
 from .evaluator import BlimpEvaluator, FinetuneEvaluator
-from src.helper.data import base_collate_fn
+from src.helper.dataset_preprocessor import base_collate_fn
 from src.helper.inference import compute_trainer_perplexity, prepare_dataset_for_ppl_inference
 
 # Set up logging for different components of the trainer

@@ -17,7 +17,7 @@ from torch.utils.data.datapipes.datapipe import IterDataPipe, MapDataPipe
 from transformers import PreTrainedTokenizerFast
 
 # Local imports
-from src.helper.data import base_collate_fn
+from src.helper.dataset_preprocessor import base_collate_fn
 
 # Standard logging setup for debugging
 logger = logging.getLogger(__name__)

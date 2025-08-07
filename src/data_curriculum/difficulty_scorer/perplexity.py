@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # Data processing utils
-from src.helper.data import SequentialSubsetSampler, base_collate_fn
+from src.helper.dataset_preprocessor import SequentialSubsetSampler, base_collate_fn
 
 # Perplexity Computation
 from src.helper.inference import (
