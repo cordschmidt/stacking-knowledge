@@ -16,6 +16,22 @@ DIFFICULTY_SCORER_UPDATE = 75
 # Logger for this file
 logger = logging.getLogger(__name__)
 
+TORCH_RUN_ENV_KEYS = [
+    "LOCAL_RANK",
+    "RANK",
+    "GROUP_RANK",
+    "ROLE_RANK",
+    "LOCAL_WORLD_SIZE",
+    "WORLD_SIZE",
+    "ROLE_WORLD_SIZE",
+    "MASTER_PORT",
+    "MASTER_ADDR",
+    "TORCHELASTIC_RESTART_COUNT",
+    "TORCHELASTIC_MAX_RESTARTS",
+    "TORCHELASTIC_RUN_ID",
+    "PYTHON_EXEC",
+]
+
 def adjust_params_for_dry_run(cfg: BabyLMConfig):
     logger.info(
         "Running in dry run mode -- overriding config with values: "
