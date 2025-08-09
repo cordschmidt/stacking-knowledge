@@ -4,6 +4,8 @@ from transformers import PreTrainedModel
 from ..config import BabyLMConfig
 from .registry import CONFIG_REGISTRY, MODEL_REGISTRY
 
+from .llama import *
+
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
 
