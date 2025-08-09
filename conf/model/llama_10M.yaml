@@ -1,0 +1,12 @@
+name: 'llama'
+
+model_kwargs:
+  hidden_size: 256
+  intermediate_size: 688
+  num_hidden_layers: 8
+  num_attention_heads: 8
+  rms_norm_eps: 1.0e-05
+  rope_theta: 1000000.0
+  attention_bias: true
+  sliding_window: 1024
+  pretraining_tp: 1
