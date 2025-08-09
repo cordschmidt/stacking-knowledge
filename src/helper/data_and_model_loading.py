@@ -20,7 +20,7 @@ def load_dataset_model_and_tokenizer(cfg: BabyLMConfig):
     dataset: DatasetDict = load_dataset(
         cfg.dataset.name,
         cfg.dataset.subconfig,
-        use_auth_token=os.environ["HF_READ_TOKEN"],
+        token=os.environ["HF_READ_TOKEN"],
     )
     # Check that the format is correct
     assert isinstance(dataset, DatasetDict), "Dataset is not a DatasetDict"

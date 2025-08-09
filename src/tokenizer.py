@@ -23,7 +23,7 @@ def load_tokenizer(cfg: BabyLMConfig) -> PreTrainedTokenizerFast:
     # Load the tokenizer from Hugging Face hub or local path
     tokenizer: PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
         cfg.tokenizer.name,                         # Tokenizer name
-        use_auth_token=os.environ["HF_READ_TOKEN"], # HF Token needed to access
+        token=os.environ["HF_READ_TOKEN"],          # HF Token needed to access
         **tokenizer_kwargs                          # Additional tokenizer args
     )
 
