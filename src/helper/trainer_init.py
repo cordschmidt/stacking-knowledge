@@ -24,7 +24,7 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
         seed=cfg.experiment.seed,  # Random seed for reproducibility
 
         # Evaluation strategy to evaluate every few steps
-        evaluation_strategy="steps",
+        eval_strategy="steps",
 
         # Evaluate every N steps (1/4 of total training unless dry run, which uses 1/2)
         eval_steps=cfg.trainer.max_training_steps // (2 if cfg.experiment.dry_run else 8),

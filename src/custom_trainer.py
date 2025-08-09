@@ -474,7 +474,7 @@ class CustomTrainer(Trainer):
     def should_log_curriculum_table(self):
         """Check if we should log the curriculum learning table at this step."""
         return (
-                self.args.evaluation_strategy == IntervalStrategy.STEPS
+                self.args.eval_strategy == IntervalStrategy.STEPS
                 and self.state.global_step % self.args.eval_steps == 0  # type: ignore
         )
 
