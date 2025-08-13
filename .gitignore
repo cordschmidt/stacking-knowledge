@@ -193,3 +193,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 /.idea
+/outputs
+/src/tokenizer/outputs
+/src/tokenizer/llama_tokenizer_8192
+src/tokenizer/tokenizer_8192.json
+/llama_tokenizer_8192
+/checkpoints
