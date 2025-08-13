@@ -2,7 +2,7 @@ defaults:
   - base_config
   - _self_
   - model: llama_10M
-  - tokenizer: cbt_8192
+  - tokenizer: llama_bpe_8192
 
 dataset: 
   name: 'stacking-babylm-2025/babylm2025_text_data'
@@ -16,7 +16,7 @@ experiment:
   seed: 42
   name: 'check_dry_run_on_mac'
   group: 'Debug_Locally'
-  offline_run: False
+  offline_run: True
   dry_run: True
 
 data_preprocessing:
@@ -29,7 +29,7 @@ trainer:
   lr: 1e-3
   num_warmup_steps: 100_000
   max_training_steps: 400_000
-  eval_blimp: True
-  eval_glue: True
-  eval_msgs: True
+  eval_blimp: False
+  eval_glue: False
+  eval_msgs: False
   eval_perplexity: True
