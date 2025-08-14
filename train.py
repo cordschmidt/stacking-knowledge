@@ -6,6 +6,7 @@ from hydra.core.config_store import ConfigStore
 
 # Local imports
 from src.config import BabyLMConfig
+from src.custom_trainer import CustomTrainer
 from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer
 from src.helper.setup_environment import setup_environment
 from src.helper.trainer_init import create_trainer
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 cs = ConfigStore.instance()
 cs.store(name="base_config", node=BabyLMConfig)
 
-def train_and_evaluate(cfg: BabyLMConfig, trainer, training_args):
+def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args):
     # If no checkpoint path is provided to resume from, run initial evaluation before training
     if not cfg.experiment.resume_checkpoint_path:
         # Evaluate the initial model to get baseline metrics

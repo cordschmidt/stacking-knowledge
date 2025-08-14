@@ -255,7 +255,7 @@ class CustomTrainer(Trainer):
         )
         return ignore_columns
 
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """
         Log `logs` on the various objects watching training.
 
@@ -264,9 +264,15 @@ class CustomTrainer(Trainer):
         Args:
             logs (`Dict[str, float]`):
                 The values to log.
+            start_time (`Optional[float]`):
+                The start of training.
         """
         if self.state.epoch is not None:
-            logs["epoch"] = round(self.state.epoch, 2)
+            logs["epoch"] = self.state.epoch
+        if self.args.include_num_input_tokens_seen:
+            logs["num_input_tokens_seen"] = self.state.num_input_tokens_seen
+            if start_time is not None:
+                logs.update(speed_metrics("train", start_time, num_tokens=self.state.num_input_tokens_seen))
 
         output = {**logs, **{"step": self.state.global_step}}
         if "curriculum_learning_table" not in logs:
@@ -312,7 +318,7 @@ class CustomTrainer(Trainer):
         # TODO: Why will always a CurriculumDataLoader be returned, even when Curriculum isn't used?
         return CurriculumDataLoader(
             global_stepnum=self.state.global_step,  # Current global step for curriculum pacing
-            tokenizer=self.tokenizer,  # Tokenizer instance for data processing
+            # tokenizer=self.tokenizer,  # Tokenizer instance for data processing
             ignore_columns=ignore_columns,  # Columns to exclude from training batches
             dataset=train_dataset,  # Dataset with 'filename' column removed
             sampler=train_sampler,  # Sampler that controls data iteration order
@@ -331,13 +337,18 @@ class CustomTrainer(Trainer):
         # Standard Hugging Face loss computation
         loss = super().compute_loss(model, inputs, **kwargs)
 
+        # Needed for logging
+        loss_metric = {"loss": loss}
+
         # Safety check, stop if max steps exceeded
         self.check_max_steps()
 
         # Log curriculum learning metrics
         if self.should_log():
-            self.log(loss)
+            self.log(loss_metric)
             self.log_curriculum_metrics(inputs)
+
+        return loss
 
     def check_max_steps(self):
         """Raise an error if global_step exceeds max_steps."""
