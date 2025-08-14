@@ -13,9 +13,6 @@ from torch.utils.data._utils.pin_memory import pin_memory as _torch_pin_memory
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _DatasetKind
 from torch.utils.data.datapipes.datapipe import IterDataPipe, MapDataPipe
 
-# HuggingFace tokenizer for text preprocessing
-from transformers import PreTrainedTokenizerFast
-
 # Local imports
 from src.helper.dataset_preprocessor import base_collate_fn
 

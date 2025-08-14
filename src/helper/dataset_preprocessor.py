@@ -75,36 +75,48 @@ class DatasetPreprocessor:
 
         batch = {
             "input_ids": [],
-            "special_tokens_mask": [],
+            "labels": [],
             "attention_mask": [],
             "filename": [],
         }
 
         full_tokenized_inputs = {
             "input_ids": [],
-            "special_tokens_mask": [],
+            "labels": [],
             "attention_mask": [],
             "filename": [],
         }
+
+        # Get the id of the padded token
+        pad_token_id = self.tokenizer.pad_token_id
 
         for example in range(len(examples["text"])):
             text = examples["text"][example]
             filename = examples["filename"][example]
 
-            # TODO: Adjust this to LLaMA models? How does padding have to be changed here?
             tokenized_inputs = self.tokenizer(
                 text,
                 pad_to_multiple_of=self.max_input_length if not self.join_sentences else None,
                 padding="longest" if not self.join_sentences else "do_not_pad",
                 max_length=self.max_input_length if not self.join_sentences else None,
                 truncation=False,
-                return_special_tokens_mask=True,
+                add_special_tokens=True,
             )
+
+            # For Causal LM's we need labels, which are in fact a copy of the input id's
+            # During loss calculation we need to ignore padded tokens, which is done by setting them to -100
+            # TODO: Normally done wihtin data collator, but unsure if this would work since we're using base_collator_fn during curriculum learning, have to check that
+            # The required shift within the labels is done internally by the model during loss calculation, so no need to do that here
+            labels = [
+                (tok if tok != pad_token_id else -100)
+                for tok in tokenized_inputs["input_ids"]
+            ]
+            tokenized_inputs["labels"] = labels
 
             if self.join_sentences:
                 # If we're joining all sentences into one long sequence before chunking,
                 # extend each token field (input_ids, attention_mask, etc.) into a growing list
-                for field_name in ["input_ids", "special_tokens_mask", "attention_mask"]:
+                for field_name in ["input_ids", "labels", "attention_mask"]:
                     full_tokenized_inputs[field_name].extend(tokenized_inputs[field_name])
 
                 # Store the filename repeatedly for each token, to keep alignment
@@ -114,12 +126,8 @@ class DatasetPreprocessor:
             else:
                 # If we're not joining, split each tokenized sentence into fixed-length chunks immediately
                 for i in range(0, len(tokenized_inputs["input_ids"]), self.max_input_length):
-                    # Skip any chunk that contains only special tokens (e.g. [PAD], [CLS])
-                    if sum(tokenized_inputs["special_tokens_mask"][
-                           i:i + self.max_input_length]) == self.max_input_length:
-                        break
                     # Add a chunk of each token field to the batch
-                    for field_name in ["input_ids", "special_tokens_mask", "attention_mask"]:
+                    for field_name in ["input_ids", "labels", "attention_mask"]:
                         batch[field_name].append(
                             tokenized_inputs[field_name][i:i + self.max_input_length]
                         )
@@ -136,7 +144,7 @@ class DatasetPreprocessor:
             # Iterate over the long tokenized input in fixed-size steps
             for i in range(0, truncated_length, self.max_input_length):
                 # For each field, extract a chunk and add it to the batch
-                for field_name in ["input_ids", "special_tokens_mask", "attention_mask"]:
+                for field_name in ["input_ids", "labels", "attention_mask"]:
                     batch[field_name].append(full_tokenized_inputs[field_name][i:i + self.max_input_length])
                 batch["filename"].append(full_tokenized_inputs["filename"][i])
 
