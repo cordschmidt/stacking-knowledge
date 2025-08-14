@@ -5,3 +5,4 @@ omegaconf
 transformers
 wandb
 nltk
+accelerate
