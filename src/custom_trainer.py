@@ -187,6 +187,11 @@ class CustomTrainer(Trainer):
         # Add custom callbacks to the Trainer's callback handler
         self.add_callback(CurriculumLearningCallback())  # Manages global step for curriculum
 
+        # Add Gradual Stacking Callback
+        if self.hydra_config.gradual_stacking.enabled:
+            stacking_callback = GradualStackingCallback(grow_every_n_steps=self.hydra_config.gradual_stacking.grow_every_n_steps)
+            self.add_callback(stacking_callback)
+
         # Flag indicating whether training is distributed across multiple GPUs/processes
         self.is_distributed = self.args.world_size > 1
 

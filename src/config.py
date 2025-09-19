@@ -119,6 +119,13 @@ class DataCurriculumParams(DictConfig):
 
     pacing_fn_kwargs: PacingFunctionParams
 
+# Gradual Stacking Parameters
+
+@dataclass
+class GradualStackingParams(DictConfig):
+    enabled: bool = False  # whether to apply gradual stacking
+    grow_every_n_steps: int = 500  # interval for layer duplication
+
 ### Container for entire config ###
 
 @dataclass
