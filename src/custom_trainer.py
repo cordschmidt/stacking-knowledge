@@ -1,3 +1,4 @@
+import copy
 import logging
 import torch
 import time
@@ -33,6 +34,59 @@ from src.helper.inference import compute_trainer_perplexity, prepare_dataset_for
 logger = logging.getLogger(__name__)
 data_cl_logger = logging.getLogger("Data Curriculum")
 
+class GradualStackingCallback(TrainerCallback):
+    def __init__(self, grow_every_n_steps=500):
+        self.grow_every_n_steps = grow_every_n_steps
+        # Track at which steps the model has been grown
+        self._grown_steps = set()
+
+    def on_step_end(self, args, state, control, model=None, optimizer=None, **kwargs):
+
+        # Check that model and optimizer is there as we need them for gradual stacking
+        assert model is not None and optimizer is not None, "GradualStackingCallback was called without model/optimizer. This should not happen"
+
+        # Only grow at multiples of grow_every_n_steps
+        if state.global_step <= 0 or state.global_step % self.grow_every_n_steps != 0:
+            return
+        # Only grow once per step
+        if state.global_step in self._grown_steps:
+            return
+
+        logger.info(f"Growing model at step {state.global_step}")
+        total_params_before_growth = sum(p.numel() for p in model.parameters())
+        logger.info(f"No. of layers before growth: {len(model.model.layers)}, total params before growth: {total_params_before_growth}")
+
+        # Track that the model has been grown at this global step
+        self._grown_steps.add(state.global_step)
+
+        # Synchronize all processes to ensure simultaneous growth
+        if args.world_size > 1:
+            dist.barrier()
+
+        # Find and duplicate middle layer
+        middle_idx = len(model.model.layers) // 2
+        new_layer = copy.deepcopy(model.model.layers[middle_idx])
+
+        # Insert the duplicated layer into the  model
+        model.model.layers.insert(middle_idx + 1, new_layer)
+        model.config.num_hidden_layers += 1
+
+        # Register parameters with optimizer
+        optimizer.param_groups[0]["params"].extend(list(new_layer.parameters()))
+
+        # Initialize optimizer state for new parameters
+        for p in new_layer.parameters():
+            if p.requires_grad and p not in optimizer.state:
+                optimizer.state[p] = {}
+
+        # Synchronize again after growth
+        if args.world_size > 1:
+            dist.barrier()
+
+        total_params_after_growth = sum(p.numel() for p in model.parameters())
+
+        logger.info(f"Duplicated layer {middle_idx}, new no. of layers: {len(model.model.layers)}, total params: {total_params_after_growth}")
+
 class CurriculumLearningCallback(TrainerCallback):
     """
     A TrainerCallback that updates the data sampler and data collator with the current global step of training.
@@ -65,6 +119,8 @@ class CurriculumLearningCallback(TrainerCallback):
             train_dataloader.sampler.global_stepnum += 1
 
         train_dataloader.global_stepnum += 1
+
+
 
 class CustomTrainer(Trainer):
     """
@@ -338,7 +394,7 @@ class CustomTrainer(Trainer):
         loss = super().compute_loss(model, inputs, **kwargs)
 
         # Needed for logging
-        loss_metric = {"loss": loss}
+        loss_metric = {"loss": loss.item()}
 
         # Safety check, stop if max steps exceeded
         self.check_max_steps()
