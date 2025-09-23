@@ -181,7 +181,7 @@ class CustomTrainer(Trainer):
             )
 
         # Store tokenizer and optional W&B curriculum table
-        self.tokenizer = tokenizer
+        self.processing_class = tokenizer
         self.curriculum_learning_table = curriculum_learning_table
 
         # Add custom callbacks to the Trainer's callback handler
@@ -199,7 +199,6 @@ class CustomTrainer(Trainer):
         """
         Overriding this method to use custom samplers that enable data-driven curriculum pacing.
         """
-
         # Validate dataset
         if self.train_dataset is None or not has_length(self.train_dataset):
             return None
@@ -358,7 +357,7 @@ class CustomTrainer(Trainer):
         assert self.train_dataset is not None
         # Ensure tokenizer is available
         assert (
-                self.tokenizer is not None
+                self.processing_class is not None
         ), "Tokenizer is not set. Please set the tokenizer before calling the train method."
 
         # NOTE: The standard Trainer.get_train_dataloader() method removes unused columns for
@@ -500,7 +499,7 @@ class CustomTrainer(Trainer):
         decoded_samples = ""
         for i in range(min(num_samples, len(inputs["input_ids"]))):
             decoded_samples += (
-                    f"{i + 1}: " + self.tokenizer.decode(inputs["input_ids"][i]) + "\n\n"
+                    f"{i + 1}: " + self.processing_class.decode(inputs["input_ids"][i]) + "\n\n"
             )
         return decoded_samples
 
@@ -659,7 +658,7 @@ class CustomTrainer(Trainer):
         with torch.no_grad():
             for batch in tqdm(dataloader):
                 # TODO: What is compute_trainer_perplexity?
-                batch_ppl = compute_trainer_perplexity(batch, self.tokenizer, self)
+                batch_ppl = compute_trainer_perplexity(batch, self.processing_class, self)
                 perplexities.extend(batch_ppl)
         return perplexities
 
@@ -706,7 +705,7 @@ class CustomTrainer(Trainer):
             model_to_save.save_pretrained(output_dir)
 
             # Save tokenizer
-            self.tokenizer.save_pretrained(output_dir)
+            self.processing_class.save_pretrained(output_dir)
 
     def save_and_sync_model(self):
         """Save model checkpoint and synchronize across distributed processes."""
