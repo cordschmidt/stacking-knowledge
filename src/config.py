@@ -136,4 +136,5 @@ class BabyLMConfig(DictConfig):
     data_preprocessing: DataPreprocessingParams
     model: ModelParams
     trainer: TrainerParams
+    gradual_stacking: GradualStackingParams
     data_curriculum: Optional[DataCurriculumParams] = None
