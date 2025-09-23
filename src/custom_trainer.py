@@ -4,6 +4,7 @@ import torch
 import time
 import random
 import os
+import math
 import torch.distributed as dist
 
 from typing import Union, List, Dict, Tuple, Optional
@@ -64,7 +65,7 @@ class GradualStackingCallback(TrainerCallback):
             dist.barrier()
 
         # Find and duplicate middle layer
-        middle_idx = len(model.model.layers) // 2
+        middle_idx = math.ceil(len(model.model.layers) / 2) # Use ceiling function as in MIDAS paper
         new_layer = copy.deepcopy(model.model.layers[middle_idx])
 
         # Insert the duplicated layer into the  model
