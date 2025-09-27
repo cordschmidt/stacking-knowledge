@@ -36,18 +36,64 @@ logger = logging.getLogger(__name__)
 data_cl_logger = logging.getLogger("Data Curriculum")
 
 class GradualStackingCallback(TrainerCallback):
-    def __init__(self, grow_every_n_steps=500):
-        self.grow_every_n_steps = grow_every_n_steps
-        # Track at which steps the model has been grown
+    def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float):
+        # Validate arguments
+        if not isinstance(total_training_steps, int) or total_training_steps <= 0:
+            raise ValueError(f"total_training_steps must be a positive integer, got {total_training_steps}")
+        if not isinstance(k_number_of_stages, int) or k_number_of_stages <= 1:
+            raise ValueError(f"k_number_of_stages must be an integer greater than 1, got {k_number_of_stages}")
+        if not isinstance(alpha, (int, float)):
+            raise ValueError(f"alpha must be a number, got {alpha}")
+        if total_training_steps < k_number_of_stages:
+            raise ValueError(
+                f"total_training_steps ({total_training_steps}) must be at least as large as "
+                f"k_number_of_stages ({k_number_of_stages}) so that each stage has >= 1 step"
+            )
+        # Set values for prop-alpha schedule
+        self.total_training_steps = total_training_steps
+        self.k_number_of_stages = k_number_of_stages
+        self.alpha = alpha
+        # Prepare set for tracking the steps at which the model has been grown
         self._grown_steps = set()
+        # Calculate the growing schedule
+        self.steps_at_which_model_should_be_grown = self._compute_prop_alpha_growing_step_schedule()
+
+    def _compute_prop_alpha_growing_step_schedule(self):
+        """
+        Computes the gradual stacking growing schedule, i.e. the steps at which the model should be grown based on the prop-alpha schedule.
+
+        Based on Saunshi et al. (2024), *On the inductive bias of stacking towards improving reasoning*):
+
+        "For a total training budget of T steps, the schedule Prop-α spends time Tᵢ in each stage such that:
+
+            Tᵢ ∝ i^α   for all stages i ∈ [k]
+
+        Thus:
+
+        Tᵢ = (i^α / Σⱼ j^α) * T"
+        """
+        # Calculate unnormalized weights i^α for all stages (numerator)
+        unnormalized_weights = [i ** self.alpha for i in range(1, self.k_number_of_stages + 1)]
+        # Sum up all weights Σⱼ j^α (denominator)
+        sum_of_weights = sum(unnormalized_weights)
+        # Calculate the training budget Tᵢ for each stage i
+        number_of_training_steps_per_stage = [int(unnormalized_weight / sum_of_weights * self.total_training_steps) for unnormalized_weight in unnormalized_weights]
+        # Compute cumulative endpoints and exclude final stage
+        gradual_stacking_growing_step_schedule = []
+        cumulative_steps = 0
+        for number_of_training_steps_in_stage_i in number_of_training_steps_per_stage[:-1]:
+            cumulative_steps += number_of_training_steps_in_stage_i
+            gradual_stacking_growing_step_schedule.append(cumulative_steps)
+
+        return gradual_stacking_growing_step_schedule
 
     def on_step_end(self, args, state, control, model=None, optimizer=None, **kwargs):
 
         # Check that model and optimizer is there as we need them for gradual stacking
         assert model is not None and optimizer is not None, "GradualStackingCallback was called without model/optimizer. This should not happen"
 
-        # Only grow at multiples of grow_every_n_steps
-        if state.global_step <= 0 or state.global_step % self.grow_every_n_steps != 0:
+        # Only grow model at the given steps based on the prop-alpha schedule
+        if state.global_step <= 0 or state.global_step not in self.steps_at_which_model_should_be_grown:
             return
         # Only grow once per step
         if state.global_step in self._grown_steps:
@@ -190,7 +236,9 @@ class CustomTrainer(Trainer):
 
         # Add Gradual Stacking Callback
         if self.hydra_config.gradual_stacking.enabled:
-            stacking_callback = GradualStackingCallback(grow_every_n_steps=self.hydra_config.gradual_stacking.grow_every_n_steps)
+            stacking_callback = GradualStackingCallback(total_training_steps = self.hydra_config.trainer.max_training_steps,
+                                                        k_number_of_stages = self.hydra_config.gradual_stacking.k_number_of_stages,
+                                                        alpha = self.hydra_config.gradual_stacking.alpha)
             self.add_callback(stacking_callback)
 
         # Flag indicating whether training is distributed across multiple GPUs/processes
