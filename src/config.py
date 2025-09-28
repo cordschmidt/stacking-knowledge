@@ -124,8 +124,9 @@ class DataCurriculumParams(DictConfig):
 @dataclass
 class GradualStackingParams(DictConfig):
     enabled: bool = False  # Whether to apply gradual stacking
-    k_number_of_stages: Optional[int] = 4 # Number of stages for model growing, the model will be grown k-1 times. The final number of layers in the model will be k * layers_per_block (the final model consists of k blocks)
+    k_number_of_stages: Optional[int] = 4 # Number of stages for model growing, the model will be grown k-1 times. The final number of layers in the model will be k * layer_per_block (the final model consists of k blocks)
     alpha: Optional[float] = 1.0 # Factor for determining the spacing between the growing stages, greater alpha leads to more training budget spend on later stages
+    layer_per_block: Optional[int] = 1 # Number of layers that are considered as one block - per stage, the middle block of layers will be duplicated
 
 ### Container for entire config ###
 

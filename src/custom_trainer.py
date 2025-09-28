@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 data_cl_logger = logging.getLogger("Data Curriculum")
 
 class GradualStackingCallback(TrainerCallback):
-    def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float):
+    def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float, layer_per_block: int):
         # Validate arguments
         if not isinstance(total_training_steps, int) or total_training_steps <= 0:
             raise ValueError(f"total_training_steps must be a positive integer, got {total_training_steps}")
@@ -44,6 +44,8 @@ class GradualStackingCallback(TrainerCallback):
             raise ValueError(f"k_number_of_stages must be an integer greater than 1, got {k_number_of_stages}")
         if not isinstance(alpha, (int, float)):
             raise ValueError(f"alpha must be a number, got {alpha}")
+        if not isinstance(layer_per_block, int) or layer_per_block <= 0:
+            raise ValueError(f"layer_per_block must be a positive integer, got {layer_per_block}")
         if total_training_steps < k_number_of_stages:
             raise ValueError(
                 f"total_training_steps ({total_training_steps}) must be at least as large as "
@@ -53,6 +55,7 @@ class GradualStackingCallback(TrainerCallback):
         self.total_training_steps = total_training_steps
         self.k_number_of_stages = k_number_of_stages
         self.alpha = alpha
+        self.block_size = layer_per_block
         # Prepare set for tracking the steps at which the model has been grown
         self._grown_steps = set()
         # Calculate the growing schedule
@@ -99,6 +102,15 @@ class GradualStackingCallback(TrainerCallback):
         if state.global_step in self._grown_steps:
             return
 
+        # As the model will be initialized with the block size and only extended by duplicating whole blocks,
+        # this should always be true
+        if len(model.model.layers) % self.block_size != 0:
+            raise ValueError(
+                f"Number of layers ({len(model.model.layers)}) is not divisible by block size ({self.block_size}). "
+                "This should not happen and might be caused by a bug inside the code"
+            )
+
+        # Log model stats before growth
         logger.info(f"Growing model at step {state.global_step}")
         total_params_before_growth = sum(p.numel() for p in model.parameters())
         logger.info(f"No. of layers before growth: {len(model.model.layers)}, total params before growth: {total_params_before_growth}")
@@ -110,29 +122,53 @@ class GradualStackingCallback(TrainerCallback):
         if args.world_size > 1:
             dist.barrier()
 
-        # Find and duplicate middle layer
-        middle_idx = math.ceil(len(model.model.layers) / 2) # Use ceiling function as in MIDAS paper
-        new_layer = copy.deepcopy(model.model.layers[middle_idx])
+        duplicated_middle_block = self._duplicate_middle_block(model)
 
-        # Insert the duplicated layer into the  model
-        model.model.layers.insert(middle_idx + 1, new_layer)
-        model.config.num_hidden_layers += 1
-
-        # Register parameters with optimizer
-        optimizer.param_groups[0]["params"].extend(list(new_layer.parameters()))
-
-        # Initialize optimizer state for new parameters
-        for p in new_layer.parameters():
-            if p.requires_grad and p not in optimizer.state:
-                optimizer.state[p] = {}
+        self._register_new_parameters_in_optimizer(optimizer, duplicated_middle_block)
 
         # Synchronize again after growth
         if args.world_size > 1:
             dist.barrier()
 
+    def _duplicate_middle_block(self, model):
+        # Divide model layers into blocks
+        blocks = [model.model.layers[i:i + self.block_size] for i in range(0, len(model.model.layers), self.block_size)]
+
+        # Determine middle block
+        middle_block_idx = math.ceil(len(blocks) / 2) - 1  # Use ceiling function as in MIDAS paper and subtract 1 for indexing lists correctly
+
+        # Duplicate the layers of the middle block
+        duplicated_middle_block = [copy.deepcopy(layer) for layer in blocks[middle_block_idx]]
+        # Determine layer indices for logging
+        middle_block_layer_indices = list(range(middle_block_idx * self.block_size, (middle_block_idx + 1) * self.block_size))
+
+        # Insert the duplicated block right after the middle block
+        insert_position = sum(len(block) for block in blocks[:middle_block_idx + 1])
+        for i, layer in enumerate(duplicated_middle_block):
+            model.model.layers.insert(insert_position + i, layer)
+
+        # Update number of hidden layers
+        model.config.num_hidden_layers += len(duplicated_middle_block)
+
+        # Determine total no. of parameters after duplicating
         total_params_after_growth = sum(p.numel() for p in model.parameters())
 
-        logger.info(f"Duplicated layer {middle_idx}, new no. of layers: {len(model.model.layers)}, total params: {total_params_after_growth}")
+        # Logging: include block and layer info
+        logger.info(
+            f"Duplicated block {middle_block_idx} out of {list(range(len(blocks)))} "
+            f"with the initial layer indices {middle_block_layer_indices}, "
+            f"new no. of layers: {len(model.model.layers)}, "
+            f"total params: {total_params_after_growth}"
+        )
+        return duplicated_middle_block
+
+    def _register_new_parameters_in_optimizer(self, optimizer, duplicated_middle_block):
+        for layer in duplicated_middle_block:
+            optimizer.param_groups[0]["params"].extend(list(layer.parameters()))
+            for p in layer.parameters():
+                if p.requires_grad and p not in optimizer.state:
+                    optimizer.state[p] = {}
+
 
 class CurriculumLearningCallback(TrainerCallback):
     """
@@ -238,7 +274,8 @@ class CustomTrainer(Trainer):
         if self.hydra_config.gradual_stacking.enabled:
             stacking_callback = GradualStackingCallback(total_training_steps = self.hydra_config.trainer.max_training_steps,
                                                         k_number_of_stages = self.hydra_config.gradual_stacking.k_number_of_stages,
-                                                        alpha = self.hydra_config.gradual_stacking.alpha)
+                                                        alpha = self.hydra_config.gradual_stacking.alpha,
+                                                        layer_per_block = self.hydra_config.gradual_stacking.layer_per_block)
             self.add_callback(stacking_callback)
 
         # Flag indicating whether training is distributed across multiple GPUs/processes

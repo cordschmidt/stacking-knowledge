@@ -40,6 +40,12 @@ def load_base_model(cfg: BabyLMConfig) -> PreTrainedModel:
     model_kwargs = cfg.model.model_kwargs
     validate_model_kwargs(model_kwargs)
 
+    # Override initial model size, if gradual stacking should be done
+    if cfg.gradual_stacking.enabled:
+        number_of_layers_per_block = cfg.gradual_stacking.layer_per_block
+        # Initialize the model with one block by overriding the number of hidden layers in model initialization
+        model_kwargs.num_hidden_layers = number_of_layers_per_block
+
     # Look up the model and config class based on the model name
     model_name = cfg.model.name
     if model_name not in MODEL_REGISTRY:
