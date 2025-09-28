@@ -36,4 +36,6 @@ trainer:
 
 gradual_stacking:
   enabled: true
-  grow_every_n_steps: 500
+  k_number_of_stages: 5
+  alpha: 0.0
+  layer_per_block: 1
