@@ -29,8 +29,9 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args)
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
 
     # After training completes, set flags to enable evaluation on all the benchmark tasks / metrics
-    trainer.eval_glue = True
-    trainer.eval_msgs = True
+    # TODO: Make all available again
+    # trainer.eval_glue = True
+    # trainer.eval_msgs = True
     trainer.eval_blimp = True
     trainer.eval_perplexity = True
 

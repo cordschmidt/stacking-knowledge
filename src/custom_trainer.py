@@ -27,7 +27,7 @@ from .data_curriculum.difficulty_scorer import get_difficulty_scorer
 from .data_curriculum.pacing_fn import get_pacing_fn
 from .dataloader import CurriculumDataLoader
 
-from .evaluator import BlimpEvaluator, FinetuneEvaluator
+from .evaluator import ZeroShotEvaluator, FinetuneEvaluator
 from src.helper.dataset_preprocessor import base_collate_fn
 from src.helper.inference import compute_trainer_perplexity, prepare_dataset_for_ppl_inference
 
@@ -813,35 +813,24 @@ class CustomTrainer(Trainer):
         # Additional behaviour - evaluate on BLIMP
         if self.eval_blimp:
             logging.info("Evaluating on BLIMP and AOA...")
-            blimp_evaluator = BlimpEvaluator(
-                inference_model_dir,
+            zeroshot_evaluator = ZeroShotEvaluator(
+                self.args.output_dir,
                 device=self.args.device,
                 process_index=self.args.process_index,  # world (global) process index
                 world_size=self.args.world_size,
                 dry_run=self.dry_run,
-                keep_predictions=is_best_run,
+                is_best_run=is_best_run,
                 use_dummy_eval_data=self.skip_execution_of_eval_scripts_for_debugging,
+                experiment_name=self.experiment_name,
+                global_steps=self.state.global_step,
             )
             # Get average of blimp metrics
-            blimp_metrics = blimp_evaluator()
+            blimp_metrics = zeroshot_evaluator()
             additional_metrics.update(blimp_metrics)  # type: ignore
 
         if self.eval_glue or self.eval_msgs:
-            logging.info("Evaluating on finetuning tasks...")
-            finetune_evaluator = FinetuneEvaluator(
-                inference_model_dir,
-                device=self.args.device,
-                process_index=self.args.process_index,  # world (global) process index
-                world_size=self.args.world_size,
-                dry_run=self.dry_run,
-                run_glue=self.eval_glue,
-                run_msgs=self.eval_msgs,
-                keep_predictions=is_best_run,
-                use_dummy_eval_data=self.skip_execution_of_eval_scripts_for_debugging,
-            )
-            # Get average of glue metrics
-            finetune_metrics = finetune_evaluator()
-            additional_metrics.update(finetune_metrics)  # type: ignore
+            # TODO: add for finetuning tasks?
+            a = 1
 
         # Ensure that every metric begins with 'metric_key_prefix'
         for key in list(additional_metrics.keys()):
