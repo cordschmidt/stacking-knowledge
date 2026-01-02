@@ -199,3 +199,6 @@ cython_debug/
 src/tokenizer/tokenizer_8192.json
 /llama_tokenizer_8192
 /checkpoints
+/results
+/wandb
+/slurm_files

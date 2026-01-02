@@ -27,7 +27,7 @@ from .data_curriculum.difficulty_scorer import get_difficulty_scorer
 from .data_curriculum.pacing_fn import get_pacing_fn
 from .dataloader import CurriculumDataLoader
 
-from .evaluator import BlimpEvaluator, FinetuneEvaluator
+from .evaluator import ZeroShotEvaluator, FinetuneEvaluator
 from src.helper.dataset_preprocessor import base_collate_fn
 from src.helper.inference import compute_trainer_perplexity, prepare_dataset_for_ppl_inference
 
@@ -487,16 +487,16 @@ class CustomTrainer(Trainer):
         loss_metric = {"loss": loss.item()}
 
         # Safety check, stop if max steps exceeded
-        self.check_max_steps()
+        self._check_max_steps()
 
         # Log curriculum learning metrics
-        if self.should_log():
+        if self._should_log():
             self.log(loss_metric)
-            self.log_curriculum_metrics(inputs)
+            self._log_curriculum_metrics(inputs)
 
         return loss
 
-    def check_max_steps(self):
+    def _check_max_steps(self):
         """Raise an error if global_step exceeds max_steps."""
         if self.state.global_step >= self.args.max_steps:
             raise Exception(
@@ -507,23 +507,23 @@ class CustomTrainer(Trainer):
                 """
             )
 
-    def should_log(self):
+    def _should_log(self):
         """Determine if logging should be done at the current step."""
         return (
                 self.args.logging_strategy == IntervalStrategy.STEPS
                 and self.state.global_step % self.args.logging_steps == 0
         )
 
-    def log_curriculum_metrics(self, inputs):
+    def _log_curriculum_metrics(self, inputs):
         """
         Log curriculum learning metrics and sample data if applicable.
         """
         # Check if curriculum learning table is initialized aka some form of curriculum learning is done
         if self.curriculum_learning_table is not None:
             # Skip redundant logging if already logged for this step
-            if not self.already_logged_curriculum_metrics():
+            if not self._check_if_curriculum_metrics_were_logged():
                 # Prepare data samples from current batch
-                data_samples = self.get_decoded_sample_inputs(inputs)
+                data_samples = self._decode_sample_inputs(inputs)
 
                 # If data curriculum is done
                 if self.data_curriculum_cfg:
@@ -534,7 +534,7 @@ class CustomTrainer(Trainer):
                         max_difficulty_score,
                         min_difficulty_score,
                         median_difficulty_score,
-                    ) = self.compute_data_curriculum_difficulty_metrics()
+                    ) = self._compute_data_curriculum_difficulty_metrics_for_logging()
                 else:
                     # Default metrics if no data curriculum is done
                     data_difficulty_percentile = 1.0
@@ -557,14 +557,14 @@ class CustomTrainer(Trainer):
                 )
 
                 # If at evaluation step, log the curriculum learning table
-                if self.should_log_curriculum_table():
+                if self._check_if_curriculum_table_should_be_logged():
                     _curriculum_learning_table = Table(
                         columns=self.curriculum_learning_table.columns,
                         data=self.curriculum_learning_table.data,
                     )
                     self.log({"curriculum_learning_table": _curriculum_learning_table})
 
-    def already_logged_curriculum_metrics(self):
+    def _check_if_curriculum_metrics_were_logged(self):
         """Check if curriculum metrics are already logged for this step."""
         if len(self.curriculum_learning_table.data) > 0:
             # Get the last recorded step in the table
@@ -580,7 +580,7 @@ class CustomTrainer(Trainer):
         else:
             return False
 
-    def get_decoded_sample_inputs(self, inputs, num_samples: int = 5):
+    def _decode_sample_inputs(self, inputs, num_samples: int = 5):
         """Decode the first few input_ids from the current batch."""
         decoded_samples = ""
         for i in range(min(num_samples, len(inputs["input_ids"]))):
@@ -589,17 +589,16 @@ class CustomTrainer(Trainer):
             )
         return decoded_samples
 
-    def compute_data_curriculum_difficulty_metrics(self):
+    def _compute_data_curriculum_difficulty_metrics_for_logging(self):
         """
-        Compute dynamic difficulty metrics during data curriculum learning.
+        Compute dynamic difficulty metrics during data curriculum learning for logging
         """
         # Get pacing function and difficulty scorer
         pacing_fn = self.callback_handler.train_dataloader.sampler.pacing_fn
         difficulty_scorer = self.callback_handler.train_dataloader.sampler.difficulty_scorer
 
         # Percentile of current pacing
-        # TODO: How is this working exactly? What code is used here? Is this affecting the order of the data
-        #  curriculum or is it just for logging?
+        # Calculates the currently aimed for difficulty percentile based on the current global step
         data_difficulty_percentile = pacing_fn(self.state.global_step)
 
         # Filtered difficulty scores for current batch
@@ -607,11 +606,11 @@ class CustomTrainer(Trainer):
         difficulty_scores = torch.tensor(
             difficulty_scorer.filtered_difficulty_scores  # type: ignore
         )
-        # TODO: Why?
-        # Remove filtered-out (zero) scores
+        # Just keep non-zero scores for further calculations
         difficulty_scores = difficulty_scores[difficulty_scores != 0]
 
         # Adjust for distributed training
+        # Calculate the actual difficulty percentile
         num_samples = difficulty_scores.shape[0] * self.args.world_size
 
         data_sampled_percentile = num_samples / self.train_dataset.num_rows
@@ -628,7 +627,7 @@ class CustomTrainer(Trainer):
             median_score,
         )
 
-    def should_log_curriculum_table(self):
+    def _check_if_curriculum_table_should_be_logged(self):
         """Check if we should log the curriculum learning table at this step."""
         return (
                 self.args.eval_strategy == IntervalStrategy.STEPS
@@ -660,10 +659,10 @@ class CustomTrainer(Trainer):
 
         metrics = {}
         metrics = self.evaluate_on_perplexity(metrics, metric_key_prefix)
-        self.save_and_sync_model()
-        metrics = self.evaluate_on_additional_tasks(metrics, metric_key_prefix, is_best_run)
-        metrics = self.compute_speed_metrics(metrics, metric_key_prefix, start_time)
-        metrics = self.record_best_model_step(metrics, metric_key_prefix, is_best_run)
+        self._save_and_sync_model()
+        metrics = self._evaluate_on_additional_tasks(metrics, metric_key_prefix, is_best_run)
+        metrics = self._compute_speed_metrics(metrics, metric_key_prefix, start_time)
+        metrics = self._record_best_model_step(metrics, metric_key_prefix, is_best_run)
 
         self.log(metrics)
         # Trigger callbacks for evaluation, notifies any registered callbacks (like EarlyStoppingCallback)
@@ -683,31 +682,31 @@ class CustomTrainer(Trainer):
 
         # Simulate perplexity calculation during debugging
         if self.skip_execution_of_eval_scripts_for_debugging:
-            ppl_mean, ppl_std = self.simulate_perplexity_metrics()
+            ppl_mean, ppl_std = self._simulate_perplexity_metrics()
         # Calculate perplexity on eval subset
         else:
-            ppl_mean, ppl_std = self.compute_perplexity_from_dataset()
+            ppl_mean, ppl_std = self._compute_perplexity_from_dataset()
 
         # Add perplexity values to the metrics result dict
         metrics[f"{metric_key_prefix}_perplexity_mean"] = ppl_mean
         metrics[f"{metric_key_prefix}_perplexity_std"] = ppl_std
         return metrics
 
-    def simulate_perplexity_metrics(self) -> Tuple[float, float]:
+    def _simulate_perplexity_metrics(self) -> Tuple[float, float]:
         """Generate simulated perplexity metrics for debugging purposes."""
         ppl_mean = random.uniform(10.0, 50.0)
         ppl_std = random.uniform(1.0, 5.0)
         return ppl_mean, ppl_std
 
-    def compute_perplexity_from_dataset(self) -> Tuple[float, float]:
+    def _compute_perplexity_from_dataset(self) -> Tuple[float, float]:
         """Compute mean and std of perplexity from evaluation dataset."""
 
         # TODO: What subset? Why only subset?
-        eval_subset = self.get_eval_subset()
+        eval_subset = self._get_eval_subset()
         logging.info("Evaluating perplexity...")
         logging.info(f" ** Number of samples: {eval_subset.num_rows}")
 
-        perplexities = self.run_perplexity_inference(eval_subset)
+        perplexities = self._run_perplexity_inference(eval_subset)
         tensor_perplexities = torch.tensor(perplexities, device=self.args.device)
 
         ppl_mean = torch.mean(tensor_perplexities)
@@ -715,7 +714,7 @@ class CustomTrainer(Trainer):
 
         # When the training is run in a distributed environment
         if self.is_distributed:
-            self.gather_distributed_metrics(ppl_mean, ppl_std)
+            self._gather_distributed_metrics(ppl_mean, ppl_std)
 
         # if main process
         # TODO: How is this relating to the main process? No check is done?
@@ -726,7 +725,7 @@ class CustomTrainer(Trainer):
 
         return ppl_mean, ppl_std
 
-    def run_perplexity_inference(self, eval_subset) -> List[float]:
+    def _run_perplexity_inference(self, eval_subset) -> List[float]:
         """Run inference to compute perplexity scores for each batch."""
 
         # TODO: What is done during eval prep here?
@@ -748,7 +747,7 @@ class CustomTrainer(Trainer):
                 perplexities.extend(batch_ppl)
         return perplexities
 
-    def gather_distributed_metrics(self, mean_tensor: torch.Tensor, std_tensor: torch.Tensor) -> None:
+    def _gather_distributed_metrics(self, mean_tensor: torch.Tensor, std_tensor: torch.Tensor) -> None:
         """Aggregate metrics across distributed processes."""
         # TODO: This method I don't get at all, nothing is changed, so how is it supposed to work at all???
         dist.barrier()
@@ -759,7 +758,7 @@ class CustomTrainer(Trainer):
         dist.all_gather(gathered_mean, mean_tensor)
         dist.all_gather(gathered_std, std_tensor)
 
-    def get_eval_subset(self):
+    def _get_eval_subset(self):
         """
         Retrieve a subset of the evaluation dataset for perplexity computation
 
@@ -793,7 +792,7 @@ class CustomTrainer(Trainer):
             # Save tokenizer
             self.processing_class.save_pretrained(output_dir)
 
-    def save_and_sync_model(self):
+    def _save_and_sync_model(self):
         """Save model checkpoint and synchronize across distributed processes."""
         self.save_model(self.args.output_dir, _internal_call=True)
 
@@ -801,7 +800,7 @@ class CustomTrainer(Trainer):
             # In distributed settings, ensure all processes have the same model state
             dist.barrier()
 
-    def evaluate_on_additional_tasks(
+    def _evaluate_on_additional_tasks(
             self, metrics: Dict[str, float], metric_key_prefix: str, is_best_run: bool
     ):
         """Evaluate on additional custom tasks and update metrics."""
@@ -813,35 +812,24 @@ class CustomTrainer(Trainer):
         # Additional behaviour - evaluate on BLIMP
         if self.eval_blimp:
             logging.info("Evaluating on BLIMP and AOA...")
-            blimp_evaluator = BlimpEvaluator(
-                inference_model_dir,
+            zeroshot_evaluator = ZeroShotEvaluator(
+                self.args.output_dir,
                 device=self.args.device,
                 process_index=self.args.process_index,  # world (global) process index
                 world_size=self.args.world_size,
                 dry_run=self.dry_run,
-                keep_predictions=is_best_run,
+                is_best_run=is_best_run,
                 use_dummy_eval_data=self.skip_execution_of_eval_scripts_for_debugging,
+                experiment_name=self.experiment_name,
+                global_steps=self.state.global_step,
             )
             # Get average of blimp metrics
-            blimp_metrics = blimp_evaluator()
+            blimp_metrics = zeroshot_evaluator()
             additional_metrics.update(blimp_metrics)  # type: ignore
 
         if self.eval_glue or self.eval_msgs:
-            logging.info("Evaluating on finetuning tasks...")
-            finetune_evaluator = FinetuneEvaluator(
-                inference_model_dir,
-                device=self.args.device,
-                process_index=self.args.process_index,  # world (global) process index
-                world_size=self.args.world_size,
-                dry_run=self.dry_run,
-                run_glue=self.eval_glue,
-                run_msgs=self.eval_msgs,
-                keep_predictions=is_best_run,
-                use_dummy_eval_data=self.skip_execution_of_eval_scripts_for_debugging,
-            )
-            # Get average of glue metrics
-            finetune_metrics = finetune_evaluator()
-            additional_metrics.update(finetune_metrics)  # type: ignore
+            # TODO: add for finetuning tasks?
+            a = 1
 
         # Ensure that every metric begins with 'metric_key_prefix'
         for key in list(additional_metrics.keys()):
@@ -852,7 +840,7 @@ class CustomTrainer(Trainer):
         metrics.update(additional_metrics)
         return metrics
 
-    def compute_speed_metrics(
+    def _compute_speed_metrics(
             self, metrics: Dict[str, float], metric_key_prefix: str, start_time: float
     ):
         """Compute speed-related metrics and update."""
@@ -863,7 +851,7 @@ class CustomTrainer(Trainer):
         metrics.update(speed_metrics(metric_key_prefix, start_time))
         return metrics
 
-    def record_best_model_step(
+    def _record_best_model_step(
             self, metrics: Dict[str, float], metric_key_prefix: str, is_best_run: bool
     ):
         """Record the step number of the best model checkpoint."""

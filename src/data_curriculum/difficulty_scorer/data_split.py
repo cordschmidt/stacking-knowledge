@@ -45,30 +45,30 @@ data_cl_logger = logging.getLogger("Data Curriculum")
 # Difficulty order for spoken-first curriculum
 # Lower numbers mean "easier" datasets to start training on
 SPOKEN_FIRST_DATASET_ORDER = {
-    "aochildes.txt": 1,
-    "bnc_spoken.txt": 2,
-    "switchboard.txt": 2,
-    "open_subtitles.txt": 3,
-    "qed.txt": 3,
-    "cbt.txt": 4,
-    "children_stories.txt": 4,
-    "simple_wikipedia.txt": 5,
-    "wikipedia.txt": 6,
-    "gutenberg.txt": 6,
+    "childes.train": 1,
+    "bnc_spoken.train": 2,
+    "switchboard.train": 2,
+    "open_subtitles.train": 3,
+    "qed.train": 3,
+    "cbt.train": 4,
+    "children_stories.train": 4,
+    "simple_wiki.train": 5,
+    "wikipedia.train": 6,
+    "gutenberg.train": 6,
 }
 
 # Difficulty order for grammatical-first curriculum
 GRAMMATICAL_FIRST_DATASET_ORDER = {
-    "cbt.txt": 1,
-    "children_stories.txt": 1,
-    "simple_wikipedia.txt": 2,
-    "wikipedia.txt": 3,
-    "gutenberg.txt": 3,
-    "open_subtitles.txt": 4,
-    "bnc_spoken.txt": 5,
-    "switchboard.txt": 5,
-    "qed.txt": 6,
-    "aochildes.txt": 6,
+    "cbt.train": 1,
+    "children_stories.train": 1,
+    "simple_wiki.train": 2,
+    "wikipedia.train": 3,
+    "gutenberg.train": 3,
+    "open_subtitles.train": 4,
+    "bnc_spoken.train": 5,
+    "switchboard.train": 5,
+    "qed.train": 6,
+    "childes.train": 6,
 }
 
 # ========================================================
