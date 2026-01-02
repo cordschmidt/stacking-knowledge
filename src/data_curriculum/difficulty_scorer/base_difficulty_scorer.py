@@ -57,6 +57,7 @@ class BaseDifficultyScorer(metaclass=ABCMeta):
                 are kept as-is or set to 1.0 if `uniform_sampling` is enabled.
         """
 
+        # Computes the maximal difficulty score that that should be considered in this stage
         max_difficulty = float(
             np.percentile(difficulty_scores, max_difficulty_percentile * 100)
         )
