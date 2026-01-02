@@ -534,7 +534,7 @@ class CustomTrainer(Trainer):
                         max_difficulty_score,
                         min_difficulty_score,
                         median_difficulty_score,
-                    ) = self.compute_data_curriculum_difficulty_metrics()
+                    ) = self.compute_data_curriculum_difficulty_metrics_for_logging()
                 else:
                     # Default metrics if no data curriculum is done
                     data_difficulty_percentile = 1.0
@@ -589,17 +589,16 @@ class CustomTrainer(Trainer):
             )
         return decoded_samples
 
-    def compute_data_curriculum_difficulty_metrics(self):
+    def compute_data_curriculum_difficulty_metrics_for_logging(self):
         """
-        Compute dynamic difficulty metrics during data curriculum learning.
+        Compute dynamic difficulty metrics during data curriculum learning for logging
         """
         # Get pacing function and difficulty scorer
         pacing_fn = self.callback_handler.train_dataloader.sampler.pacing_fn
         difficulty_scorer = self.callback_handler.train_dataloader.sampler.difficulty_scorer
 
         # Percentile of current pacing
-        # TODO: How is this working exactly? What code is used here? Is this affecting the order of the data
-        #  curriculum or is it just for logging?
+        # Calculates the currently aimed for difficulty percentile based on the current global step
         data_difficulty_percentile = pacing_fn(self.state.global_step)
 
         # Filtered difficulty scores for current batch
@@ -607,11 +606,11 @@ class CustomTrainer(Trainer):
         difficulty_scores = torch.tensor(
             difficulty_scorer.filtered_difficulty_scores  # type: ignore
         )
-        # TODO: Why?
-        # Remove filtered-out (zero) scores
+        # Just keep non-zero scores for further calculations
         difficulty_scores = difficulty_scores[difficulty_scores != 0]
 
         # Adjust for distributed training
+        # Calculate the actual difficulty percentile
         num_samples = difficulty_scores.shape[0] * self.args.world_size
 
         data_sampled_percentile = num_samples / self.train_dataset.num_rows
