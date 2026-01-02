@@ -16,11 +16,9 @@ ERROR="${RED}"
 
 # ---------- 1. Install Miniconda ----------
 if [ ! -d "$HOME/miniconda3" ]; then
-    echo -e "${INFO}Installing Miniconda...${NC}"
-    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
-    bash /tmp/miniconda.sh -b -p $HOME/miniconda3  # -b = batch install, no prompts
-    rm /tmp/miniconda.sh
-    echo -e "${SUCCESS}Installed Miniconda!${NC}"
+    echo -e "${ERROR}ERROR: Miniconda is not installed!${NC}"
+    echo -e "${WARN}Please make sure to install miniconda on your system.${NC}"
+    echo -e "${WARN}After installing miniconda, execute this setup script again.${NC}"
 else
     echo -e "${INFO}Miniconda already installed, skipping.${NC}"
 fi
