@@ -41,9 +41,7 @@ def load_dataset_model_and_tokenizer(cfg: BabyLMConfig):
             tokenizer.vocab_size == model.config.vocab_size
     ), "Tokenizer and model vocab size mismatch"
 
-    train_dataset, eval_dataset = preprocess_data(cfg=cfg, tokenizer=tokenizer, dataset=dataset)
-
-    return model, tokenizer, train_dataset, eval_dataset
+    return model, tokenizer, dataset
 
 def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
     # Preprocess the data

@@ -7,7 +7,7 @@ from hydra.core.config_store import ConfigStore
 # Local imports
 from src.config import BabyLMConfig
 from src.custom_trainer import CustomTrainer
-from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer
+from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer, preprocess_data
 from src.helper.setup_environment import setup_environment
 from src.helper.trainer_init import create_trainer
 from src.helper.wandb_logging import enable_wandb_logging
@@ -49,7 +49,8 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args)
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: BabyLMConfig):
     setup_environment(cfg)
-    model, tokenizer, train_dataset, eval_dataset = load_dataset_model_and_tokenizer(cfg)
+    model, tokenizer, dataset = load_dataset_model_and_tokenizer(cfg)
+    train_dataset, eval_dataset = preprocess_data(cfg=cfg, tokenizer=tokenizer, dataset=dataset)
     curriculum_learning_table = enable_wandb_logging(cfg)
     trainer, training_args = create_trainer(cfg=cfg, model=model, tokenizer=tokenizer, train_dataset=train_dataset, eval_dataset=eval_dataset, curriculum_learning_table=curriculum_learning_table)
     train_and_evaluate(cfg, trainer, training_args)
