@@ -201,3 +201,4 @@ src/tokenizer/tokenizer_8192.json
 /checkpoints
 /results
 /wandb
+/slurm_files
