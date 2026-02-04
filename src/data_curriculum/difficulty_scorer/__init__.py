@@ -17,7 +17,11 @@ from src.config import DifficultyScorerKwargsType
 
 # Base class for all difficulty scorers
 from .base_difficulty_scorer import BaseDifficultyScorer
+
+# Data Split Scorers
 from .data_split import DataSplitSorter
+from .staged_data_split import StagedDataSplitSorter
+
 
 # importing for registry to register difficulty scorers
 from .perplexity import NGramPerplexityScorer
