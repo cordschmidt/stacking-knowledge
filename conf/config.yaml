@@ -3,6 +3,7 @@ defaults:
   - _self_
   - model: llama_10M
   - tokenizer: llama_bpe_8192
+  - data_curriculum: prop_alpha_aligned_staged_data_split
 
 dataset: 
   name: 'stacking-babylm-2025/babylm2025_text_data'
@@ -14,17 +15,18 @@ model:
 
 experiment: 
   seed: 42
-  name: 'check_dry_run_on_mac'
+  name: 'test_staged_data_split_${now:%Y-%m-%d_%H-%M}'
   group: 'Debug_Locally'
-  offline_run: True
+  offline_run: False
   dry_run: True
+  wandb_log_locally: False
 
 data_preprocessing:
   include_punctuation: True
   join_sentences: True
   max_input_length: 128
 
-trainer: 
+trainer:
   batch_size: 32 # across 4 GPUs gives an effective batch size of 128
   lr: 1e-3
   num_warmup_steps: 100_000
@@ -36,6 +38,6 @@ trainer:
 
 gradual_stacking:
   enabled: true
-  k_number_of_stages: 5
+  k_number_of_stages: 6
   alpha: 0.0
   layer_per_block: 1

@@ -3,7 +3,10 @@ Module for establishing a pacing function for data-driven curriculum learning.
 Used by the CurriculumSampler class to determine the upper limit of the sampling difficulty.
 """
 
-from typing import Callable
+from typing import Callable, Any
+
+from src.gradual_stacking.scheduler import PropAlphaScheduler
+
 
 def get_pacing_fn(
     pacing_fn_name: str,
@@ -12,6 +15,7 @@ def get_pacing_fn(
     end_percent: float, # Reach full difficulty e.g. by 70% of training steps
     starting_difficulty: float = 0.2, # Initially sample from bottom 20% easiest examples
     max_difficulty: float = 1.0, # Eventually allow sampling from full difficulty range
+    **kwargs: Any,  # Additional arguments like alpha and k_number_of_stages
 ) -> Callable[[int], float]:
     """
     Modified from: https://github.com/google-research/understanding-curricula/blob/main/utils/utils.py
@@ -144,6 +148,30 @@ def get_pacing_fn(
             )
 
         return _log_function
+
+    # === PROP-ALPHA (Synchronized) pacing === (Synchronized to Gradual Stacking Steps)
+    elif pacing_fn_name == "prop_alpha":
+        # Extract scheduler-specific arguments
+        k_number_of_stages = kwargs.get("k_number_of_stages")
+        alpha = kwargs.get("alpha")
+
+        # Initialize a local scheduler with the same parameters as the StackingCallback
+        sync_scheduler = PropAlphaScheduler(
+            total_training_steps=total_steps,
+            k_number_of_stages=k_number_of_stages,
+            alpha=alpha
+        )
+
+        def _prop_alpha_function(step: int) -> float:
+            # Get the 0-indexed stage from the scheduler
+            current_stage_idx = sync_scheduler.get_current_stage(step)
+
+            # Convert to a percentile that maps to the correct stage in the Sorter.
+            # We return the midpoint of the stage's percentile range to be robust.
+            # Example: If k=6, Stage 0 returns (0 + 0.5)/6 = 0.083
+            return (current_stage_idx + 0.5) / k_number_of_stages
+
+        return _prop_alpha_function
 
     else:
         # Default fallback: use max difficulty from start (no pacing)

@@ -99,6 +99,9 @@ class PacingFunctionParams(Mapping[str, Any]):
     # Max difficulty (percentile of the data) to end at; 1.0 means include all data at the
     # end of the curriculum
     max_difficulty: Optional[float] = 1.0
+    # Optional parameters required prop-alpha aligned pacing
+    k_number_of_stages: Optional[int] = None
+    alpha: Optional[float] = None
 
 
 # Difficulty Scorer Parameters
