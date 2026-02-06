@@ -20,19 +20,10 @@ from datasets import Dataset
 from .base_difficulty_scorer import BaseDifficultyScorer
 from .registry import register_difficulty_scorer
 
+# Import dataset / stage info
+from .stages import CUSTOM_STAGED_ORDER, NUM_STAGES
+
 data_cl_logger = logging.getLogger("Data Curriculum")
-
-# Lower numbers = Earlier stages.
-CUSTOM_STAGED_ORDER = {
-    "childes.train": 1,
-    "bnc_spoken.train": 2,
-    "switchboard.train": 3,
-    "open_subtitles.train": 4,
-    "simple_wiki.train": 5,
-    "gutenberg.train": 6,
-}
-
-NUM_STAGES = max(CUSTOM_STAGED_ORDER.values())
 
 @register_difficulty_scorer("staged_data_split")
 class StagedDataSplitSorter(BaseDifficultyScorer):
@@ -83,7 +74,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
     def _determine_current_stage(self, max_difficulty_percentile: float) -> int:
         if self.account_for_dataset_proportions:
-            return self._get_active_stage_considering_of_dataset_proportions(max_difficulty_percentile=max_difficulty_percentile)
+            return self._get_active_stage_considering_dataset_proportions(max_difficulty_percentile=max_difficulty_percentile)
         else:
             return self._get_active_stage_regardless_of_dataset_proportion(max_difficulty_percentile=max_difficulty_percentile)
 
@@ -102,7 +93,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
                 NUM_STAGES,
                 current_stage
             )
-    def _get_active_stage_considering_of_dataset_proportions(self, max_difficulty_percentile: float) -> int:
+    def _get_active_stage_considering_dataset_proportions(self, max_difficulty_percentile: float) -> int:
         """
         This takes into account the proportion of the dataset, so when the max_difficulty_percentile is 0.3,
         it will look what is the highest difficulty in 1/3 of the "easiest" data considering the difficulties in

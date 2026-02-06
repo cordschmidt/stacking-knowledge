@@ -3,7 +3,7 @@ defaults:
   - _self_
   - model: llama_10M
   - tokenizer: llama_bpe_8192
-  - data_curriculum: linear_staged_data_split
+  - data_curriculum: prop_alpha_aligned_staged_data_split
 
 dataset: 
   name: 'stacking-babylm-2025/babylm2025_text_data'
@@ -37,7 +37,7 @@ trainer:
   eval_perplexity: True
 
 gradual_stacking:
-  enabled: false
-  k_number_of_stages: 5
+  enabled: true
+  k_number_of_stages: 6
   alpha: 0.0
   layer_per_block: 1

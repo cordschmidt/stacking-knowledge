@@ -31,6 +31,7 @@ from datasets import Dataset
 # Import the base scorer and registry for registering this scorer
 from .base_difficulty_scorer import BaseDifficultyScorer
 from .registry import register_difficulty_scorer
+from src.data_curriculum.difficulty_scorer.stages import SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023, GRAMMATICAL_FIRST_DATASET_ORDER_BABYLM_2023
 
 # Logger for curriculum learning progress
 data_cl_logger = logging.getLogger("Data Curriculum")
@@ -39,37 +40,6 @@ data_cl_logger = logging.getLogger("Data Curriculum")
 # =============================
 # Predefined difficulty orders
 # =============================
-
-# TODO: Have to change this in order to make it compatible with the 2025 dataset
-
-# Difficulty order for spoken-first curriculum
-# Lower numbers mean "easier" datasets to start training on
-SPOKEN_FIRST_DATASET_ORDER = {
-    "childes.train": 1,
-    "bnc_spoken.train": 2,
-    "switchboard.train": 2,
-    "open_subtitles.train": 3,
-    "qed.train": 3,
-    "cbt.train": 4,
-    "children_stories.train": 4,
-    "simple_wiki.train": 5,
-    "wikipedia.train": 6,
-    "gutenberg.train": 6,
-}
-
-# Difficulty order for grammatical-first curriculum
-GRAMMATICAL_FIRST_DATASET_ORDER = {
-    "cbt.train": 1,
-    "children_stories.train": 1,
-    "simple_wiki.train": 2,
-    "wikipedia.train": 3,
-    "gutenberg.train": 3,
-    "open_subtitles.train": 4,
-    "bnc_spoken.train": 5,
-    "switchboard.train": 5,
-    "qed.train": 6,
-    "childes.train": 6,
-}
 
 # ========================================================
 # Difficulty scorer class that uses static dataset ordering
@@ -92,9 +62,9 @@ class DataSplitSorter(BaseDifficultyScorer):
         """
         super().__init__(**kwargs)
         self.filename_map = (
-            SPOKEN_FIRST_DATASET_ORDER
+            SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023
             if spoken_first
-            else GRAMMATICAL_FIRST_DATASET_ORDER
+            else GRAMMATICAL_FIRST_DATASET_ORDER_BABYLM_2023
         )
 
     def score_difficulty(
