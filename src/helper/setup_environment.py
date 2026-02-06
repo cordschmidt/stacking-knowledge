@@ -58,6 +58,9 @@ def setup_environment(cfg: BabyLMConfig):
 
 def do_additional_config_validations(cfg: BabyLMConfig):
     validate_prop_alpha_aligned_data_curriculum_pacing(cfg=cfg)
+    if cfg.continual_pretraining.enable_lr_reset:
+        validate_staged_data_curriculum_is_enabled_for_continual_pretraining(cfg=cfg)
+        validate_either_rewarm_steps_or_fraction_is_set(cfg=cfg)
 
 
 def validate_prop_alpha_aligned_data_curriculum_pacing(cfg: BabyLMConfig):
@@ -76,6 +79,28 @@ def validate_that_number_of_prop_alpha_stages_equal_number_of_datasets(cfg: Baby
             f"to equal the data's NUM_STAGES ({NUM_STAGES})."
         )
 
+def validate_staged_data_curriculum_is_enabled_for_continual_pretraining(cfg: BabyLMConfig):
+    if cfg.data_curriculum is None:
+        raise ValueError(
+            f"Configuration Error: 'lr_reset' for continual pretraining is set to True, but can only be used "
+            f"when data_curriculum is active"
+        )
+    if cfg.data_curriculum.difficulty_scorer_name != "staged_data_split":
+        raise ValueError(
+            f"Configuration Error: 'lr_reset' for continual pretraining is set to True, but this can only be used "
+            f"with the 'staged_data_split' data curriculum scorer. Current scorer: "
+            f"'{cfg.data_curriculum.difficulty_scorer_name}'"
+        )
+
+def validate_either_rewarm_steps_or_fraction_is_set(cfg: BabyLMConfig):
+    rewarm_steps = cfg.continual_pretraining.rewarm_steps
+    rewarm_fraction = cfg.continual_pretraining.rewarm_fraction
+
+    # Check that either rewarm steps or rewarm fraction is set
+    if rewarm_steps is not None and rewarm_fraction is not None:
+        raise ValueError(
+            "Configuration Error: Provide either 'rewarm_steps' or 'rewarm_fraction', not both."
+        )
 
 def adjust_parameters_in_config_for_special_setups(cfg: BabyLMConfig):
     # Adjust training parameters in dry run for faster testing & debugging

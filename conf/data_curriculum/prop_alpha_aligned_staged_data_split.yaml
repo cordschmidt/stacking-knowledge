@@ -1,8 +1,6 @@
   difficulty_scorer_name: "staged_data_split"
   difficulty_scorer_kwargs: {
-    account_for_dataset_proportions: False,
-    lr_reset: True,
-    rewarm_steps: 3
+    account_for_dataset_proportions: False
   }
 
   pacing_fn_name: "prop_alpha"

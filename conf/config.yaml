@@ -41,3 +41,7 @@ gradual_stacking:
   k_number_of_stages: 6
   alpha: 0.0
   layer_per_block: 1
+
+continual_pretraining:
+  enable_lr_reset: true
+  rewarm_steps: 3
