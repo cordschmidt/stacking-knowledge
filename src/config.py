@@ -131,6 +131,12 @@ class GradualStackingParams(DictConfig):
     alpha: Optional[float] = 1.0 # Factor for determining the spacing between the growing stages, greater alpha leads to more training budget spend on later stages
     layer_per_block: Optional[int] = 1 # Number of layers that are considered as one block - per stage, the middle block of layers will be duplicated
 
+@dataclass
+class ContinualPretrainingParams(DictConfig):
+    enable_lr_reset: bool = False
+    rewarm_steps: Optional[float] = None
+    rewarm_fraction: Optional[float] = None
+
 ### Container for entire config ###
 
 @dataclass
@@ -142,4 +148,5 @@ class BabyLMConfig(DictConfig):
     model: ModelParams
     trainer: TrainerParams
     gradual_stacking: GradualStackingParams
+    continual_pretraining: ContinualPretrainingParams
     data_curriculum: Optional[DataCurriculumParams] = None

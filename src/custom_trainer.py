@@ -150,7 +150,7 @@ class CustomTrainer(Trainer):
         if self.data_curriculum_cfg:
             # Check if 'lr_reset' exists in data curriculum kwargs and if it is True
             scorer_kwargs = self.data_curriculum_cfg.difficulty_scorer_kwargs or {}
-            should_lr_reset = scorer_kwargs.get("lr_reset", False)
+            should_lr_reset = hydra_config.continual_pretraining.enable_lr_reset
 
             # Check if using the staged curriculum and if reset is requested
             is_staged = self.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split"

@@ -5,7 +5,7 @@ import torch.distributed as dist
 from transformers import TrainerCallback
 from src.gradual_stacking.scheduler import PropAlphaScheduler
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("Gradual Stacking")
 
 
 class GradualStackingCallback(TrainerCallback):

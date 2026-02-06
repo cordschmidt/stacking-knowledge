@@ -8,7 +8,7 @@ from src.data_curriculum.difficulty_scorer.stages import NUM_STAGES
 
 from src.data_curriculum.pacing_fn import get_pacing_fn
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("Continual Pretraining")
 
 
 class ContinualPretrainingCallback(TrainerCallback):
@@ -32,7 +32,7 @@ class ContinualPretrainingCallback(TrainerCallback):
             duration = stage_end - stage_start
             self.stage_durations.append(duration)
 
-        self.rewarm_steps_per_stage = cfg.data_curriculum.difficulty_scorer_kwargs["rewarm_steps"]
+        self.rewarm_steps_per_stage = cfg.continual_pretraining.rewarm_steps
         self.last_active_stage = -1
 
     def on_step_begin(self, args, state, control, **kwargs):
