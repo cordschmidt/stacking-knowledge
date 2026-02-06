@@ -21,6 +21,7 @@ from transformers.modeling_utils import unwrap_model
 
 # Local imports
 from .config import BabyLMConfig
+from .continual_pretraining.continual_pretraining_callback import ContinualPretrainingCallback
 # Data curriculum related
 from .data_curriculum.datasampler import CurriculumSampler, DistributedCurriculumSampler
 from .data_curriculum.difficulty_scorer import get_difficulty_scorer
@@ -144,6 +145,20 @@ class CustomTrainer(Trainer):
                                                         alpha = self.hydra_config.gradual_stacking.alpha,
                                                         layer_per_block = self.hydra_config.gradual_stacking.layer_per_block)
             self.add_callback(stacking_callback)
+
+        # Conditional addition of the ContinualPretrainingCallback
+        if self.data_curriculum_cfg:
+            # Check if 'lr_reset' exists in data curriculum kwargs and if it is True
+            scorer_kwargs = self.data_curriculum_cfg.difficulty_scorer_kwargs or {}
+            should_lr_reset = scorer_kwargs.get("lr_reset", False)
+
+            # Check if using the staged curriculum and if reset is requested
+            is_staged = self.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split"
+
+            if is_staged and should_lr_reset:
+                logger.info("Continual Pre-training enabled: Adding StageResetCallback.")
+                # The callback will handle boundary calculation internally as discussed
+                self.add_callback(ContinualPretrainingCallback(trainer=self, cfg=hydra_config))
 
         # Flag indicating whether training is distributed across multiple GPUs/processes
         self.is_distributed = self.args.world_size > 1

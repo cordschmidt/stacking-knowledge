@@ -22,7 +22,7 @@ class BaseDifficultyScorer(metaclass=ABCMeta):
     difficulty scorers should follow. It uses the `ABCMeta` metaclass to
     enforce that subclasses must implement certain abstract methods.
     """
-    def __init__(self, uniform_sampling: bool = False):
+    def __init__(self, uniform_sampling: bool = False, **kwargs):
         """
         Initializes the base scorer
 
