@@ -18,6 +18,7 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
         per_device_train_batch_size=cfg.trainer.batch_size,
 
         learning_rate=cfg.trainer.lr,  # Learning rate for optimizer
+        lr_scheduler_type=cfg.trainer.lr_scheduler_type, # Defines type of learning rate schedule
         max_steps=cfg.trainer.max_training_steps,  # Max number of training steps
         warmup_steps=cfg.trainer.num_warmup_steps,  # Number of warmup steps for learning rate scheduler
 

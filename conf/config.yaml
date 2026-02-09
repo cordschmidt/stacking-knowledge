@@ -28,6 +28,7 @@ data_preprocessing:
 
 trainer:
   batch_size: 32 # across 4 GPUs gives an effective batch size of 128
+  lr_scheduler_type: "cosine"
   lr: 1e-3
   num_warmup_steps: 100_000
   max_training_steps: 400_000
