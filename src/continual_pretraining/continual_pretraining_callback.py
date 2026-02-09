@@ -33,6 +33,7 @@ class ContinualPretrainingCallback(TrainerCallback):
             self.stage_durations.append(duration)
 
         self.rewarm_steps_per_stage = cfg.continual_pretraining.rewarm_steps
+        self.rewarm_fraction = cfg.continual_pretraining.rewarm_fraction
         self.last_active_stage = -1
 
     def on_step_begin(self, args, state, control, **kwargs):
@@ -50,19 +51,24 @@ class ContinualPretrainingCallback(TrainerCallback):
             self.last_active_stage = current_stage
             steps_in_this_stage = self.stage_durations[current_stage]
 
+            # Determine warmup steps, use fraction if available, otherwise use fixed steps
+            if self.rewarm_fraction is not None:
+                warmup_steps = math.ceil(self.rewarm_fraction * steps_in_this_stage)
+            else:
+                warmup_steps = self.rewarm_steps_per_stage if self.rewarm_steps_per_stage is not None else 0
+
             # Re-initialize the Hugging Face scheduler for the duration of this specific stage
             self.trainer.lr_scheduler = get_scheduler(
                 name=args.lr_scheduler_type,
                 optimizer=self.trainer.optimizer,
-                num_warmup_steps=self.rewarm_steps_per_stage,
+                num_warmup_steps=warmup_steps,
                 num_training_steps=steps_in_this_stage
             )
 
-            logger.info(
-                f"--- Continual Pre-Training: Stage Transition Detected ---"
-                f"Now starting Stage {current_stage + 1} at global step {current_global_step}. "
-                f"Stage duration: {steps_in_this_stage} steps."
-            )
+            logger.info(f"--- Continual Pre-Training: Stage Transition Detected ---")
+            logger.info(f"Now starting Stage {current_stage + 1} at global step {current_global_step}")
+            logger.info(f"Stage duration: {steps_in_this_stage} steps")
+            logger.info(f"Warmup: {warmup_steps} steps")
 
     def _get_staged_boundaries(self, cfg: BabyLMConfig):
         """
