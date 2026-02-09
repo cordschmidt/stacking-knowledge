@@ -82,6 +82,7 @@ class TrainerParams(DictConfig):
     eval_glue: bool
     eval_msgs: bool
     eval_perplexity: bool
+    lr_scheduler_type: str = "linear"
 
 
 ### Curriculum learning parameter: can be either objective or data-driven ###
