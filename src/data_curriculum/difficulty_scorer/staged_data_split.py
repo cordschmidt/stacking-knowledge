@@ -21,7 +21,7 @@ from .base_difficulty_scorer import BaseDifficultyScorer
 from .registry import register_difficulty_scorer
 
 # Import dataset / stage info
-from .stages import CUSTOM_STAGED_ORDER, NUM_STAGES
+from .stages import CUSTOM_STAGED_ORDER, NUM_STAGES, DATASET_TOKEN_COUNTS
 
 data_cl_logger = logging.getLogger("Data Curriculum")
 
@@ -31,11 +31,11 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
     A difficulty scorer that implements distinct stage training.
     """
 
-    def __init__(self, account_for_dataset_proportions: bool, **kwargs: Any):
+    def __init__(self, proportion_mode: str, **kwargs: Any):
         super().__init__(**kwargs)
         # Use custom order
         self.filename_to_difficulty_map = CUSTOM_STAGED_ORDER
-        self.account_for_dataset_proportions = account_for_dataset_proportions
+        self.proportion_mode = proportion_mode  # Expects None, sample or token
 
         # Optimization caches
         self._difficulty_scores_tensor = None
@@ -85,7 +85,31 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         # Convert to tensor for vectorization
         self._difficulty_scores_tensor = torch.tensor(self._difficulty_scores, dtype=torch.float32)
 
-    def _get_corpora_sizes_on_complete_dataset(self, dataset: Dataset):
+
+    def _calculate_transition_thresholds(self, dataset: Dataset) -> None:
+        """
+        Calculates the percentile thresholds where the stage transitions happen
+        """
+        if self.proportion_mode is None:
+            # Equal duration for every stage, e.g. [1/6, 2/6, 3/6, 4/6, 5/6]
+            self.transition_thresholds = [i / NUM_STAGES for i in range(1, NUM_STAGES)]
+            data_cl_logger.info(f"Calculated equal-interval thresholds: {self.transition_thresholds}")
+        elif self.proportion_mode == "sample":
+            counts_for_each_corpus = self._get_corpora_sample_sizes_on_complete_dataset(dataset=dataset)
+            total_samples = counts_for_each_corpus.sum()
+            # Calculate cumulative sample sizes, normalize to percentiles
+            cumulative_percentiles = torch.cumsum(counts_for_each_corpus, dim=0).float() / total_samples
+            # Exclude 1.0, this threshold we don't need
+            self.transition_thresholds = cumulative_percentiles[:-1].tolist()
+            data_cl_logger.info(f"Calculated proportion-based thresholds: {self.transition_thresholds}")
+        elif self.proportion_mode == "token":
+            number_of_tokens_for_each_corpus = self._get_corpora_token_sizes()
+            total_number_of_tokens = number_of_tokens_for_each_corpus.sum()
+            cumulative_percentiles = torch.cumsum(number_of_tokens_for_each_corpus, dim=0).float() / total_number_of_tokens
+            self.transition_thresholds = cumulative_percentiles[:-1].tolist()
+            data_cl_logger.info(f"Calculated token-proportion thresholds: {self.transition_thresholds}")
+
+    def _get_corpora_sample_sizes_on_complete_dataset(self, dataset: Dataset):
         # Get the 'filename' column for every sample in the complete dataset
         filenames_for_every_sample = dataset["filename"]
 
@@ -105,22 +129,16 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
         return filtered_counts
 
-    def _calculate_transition_thresholds(self, dataset: Dataset) -> None:
+    def _get_corpora_token_sizes(self) -> torch.Tensor:
         """
-        Calculates the percentile thresholds where the stage transitions happen
+        Aggregates token counts per stage using the static mapping in stages.py
         """
-        if not self.account_for_dataset_proportions:
-            # Equal duration for every stage, e.g. [1/6, 2/6, 3/6, 4/6, 5/6]
-            self.transition_thresholds = [i / NUM_STAGES for i in range(1, NUM_STAGES)]
-            data_cl_logger.info(f"Calculated equal-interval thresholds: {self.transition_thresholds}")
-        else:
-            counts_for_each_corpus = self._get_corpora_sizes_on_complete_dataset(dataset=dataset)
-            total_samples = counts_for_each_corpus.sum()
-            # Calculate cumulative sample sizes, normalize to percentiles
-            cumulative_percentiles = torch.cumsum(counts_for_each_corpus, dim=0).float() / total_samples
-            # Exclude 1.0, this threshold we don't need
-            self.transition_thresholds = cumulative_percentiles[:-1].tolist()
-            data_cl_logger.info(f"Calculated proportion-based thresholds: {self.transition_thresholds}")
+        stage_counts = torch.zeros(NUM_STAGES, dtype=torch.float32)
+        for filename, stage in self.filename_to_difficulty_map.items():
+            token_count = DATASET_TOKEN_COUNTS.get(filename, 0)
+            # stages are 1-indexed, tensor is 0-indexed
+            stage_counts[stage - 1] += token_count
+        return stage_counts
 
     def _determine_current_stage(self, max_difficulty_percentile: float) -> int:
         """

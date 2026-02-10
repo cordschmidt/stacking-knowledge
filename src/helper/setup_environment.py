@@ -58,6 +58,7 @@ def setup_environment(cfg: BabyLMConfig):
 
 def do_additional_config_validations(cfg: BabyLMConfig):
     validate_prop_alpha_aligned_data_curriculum_pacing(cfg=cfg)
+    validate_staged_proportion_mode(cfg=cfg)
     if cfg.continual_pretraining.enable_lr_reset:
         validate_staged_data_curriculum_is_enabled_for_continual_pretraining(cfg=cfg)
         validate_either_rewarm_steps_or_fraction_is_set(cfg=cfg)
@@ -78,6 +79,17 @@ def validate_that_number_of_prop_alpha_stages_equal_number_of_datasets(cfg: Baby
             f"gradual_stacking.k_number_of_stages ({cfg.gradual_stacking.k_number_of_stages}) "
             f"to equal the data's NUM_STAGES ({NUM_STAGES})."
         )
+
+def validate_staged_proportion_mode(cfg: BabyLMConfig):
+    if cfg.data_curriculum and cfg.data_curriculum.difficulty_scorer_name == "staged_data_split":
+        scorer_kwargs = cfg.data_curriculum.difficulty_scorer_kwargs or {}
+        mode = scorer_kwargs.get("proportion_mode")
+        valid_modes = [None, "sample", "token"]
+        if mode not in valid_modes:
+             raise ValueError(
+                 f"Invalid 'proportion_mode': {mode}. "
+                 f"Must be one of {valid_modes} in difficulty_scorer_kwargs."
+             )
 
 def validate_staged_data_curriculum_is_enabled_for_continual_pretraining(cfg: BabyLMConfig):
     if cfg.data_curriculum is None:
