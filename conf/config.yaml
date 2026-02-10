@@ -3,7 +3,7 @@ defaults:
   - _self_
   - model: llama_10M
   - tokenizer: llama_bpe_8192
-  - data_curriculum: prop_alpha_aligned_staged_data_split
+  - data_curriculum: linear_staged_data_split
 
 dataset: 
   name: 'stacking-babylm-2025/babylm2025_text_data'
@@ -15,7 +15,7 @@ model:
 
 experiment: 
   seed: 42
-  name: 'test_staged_data_split_${now:%Y-%m-%d_%H-%M}'
+  name: 'test_lr_reset_with_dataset_proportions_linear_${now:%Y-%m-%d_%H-%M}'
   group: 'Debug_Locally'
   offline_run: False
   dry_run: True
@@ -38,11 +38,10 @@ trainer:
   eval_perplexity: True
 
 gradual_stacking:
-  enabled: true
+  enabled: False
   k_number_of_stages: 6
   alpha: 0.0
   layer_per_block: 1
 
 continual_pretraining:
   enable_lr_reset: true
-  rewarm_steps: 3
