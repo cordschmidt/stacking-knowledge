@@ -46,11 +46,11 @@ class ContinualPretrainingCallback(TrainerCallback):
             self._reset_learning_rate_scheduler_for_new_stage(current_stage=current_stage, current_global_step=current_global_step, lr_scheduler_type=args.lr_scheduler_type)
 
     def _initialize_stage_boundaries_from_dataloader(self, train_dataloader):
-        self._set_stage_boundaries(train_dataloader)
+        self._set_stage_boundaries_in_callback(train_dataloader)
         self._determine_stage_durations()
         self._is_initialized = True
 
-    def _set_stage_boundaries(self, train_dataloader):
+    def _set_stage_boundaries_in_callback(self, train_dataloader):
         """
         Calculates the step numbers where the pacing function triggers
         a dataset stage transition.
