@@ -10,12 +10,12 @@ CUSTOM_STAGED_ORDER = {
 
 # Number of tokens for each corpus on the train set
 DATASET_TOKEN_COUNTS = {
-    "childes.dev": 6_164_224,
-    "gutenberg.dev": 3_713_536,
-    "open_subtitles.dev": 3_448_576,
-    "simple_wiki.dev": 2_435_584,
-    "bnc_spoken.dev": 1_331_200,
-    "switchboard.dev": 254_848,
+    "childes.train": 6_164_224,
+    "bnc_spoken.train": 1_331_200,
+    "switchboard.train": 254_848,
+    "open_subtitles.train": 3_448_576,
+    "simple_wiki.train": 2_435_584,
+    "gutenberg.train": 3_713_536,
 }
 
 
