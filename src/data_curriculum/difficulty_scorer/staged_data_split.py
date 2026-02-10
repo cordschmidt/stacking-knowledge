@@ -33,7 +33,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
     def __init__(self, account_for_dataset_proportions: bool, **kwargs: Any):
         super().__init__(**kwargs)
-        # Use your custom order
+        # Use custom order
         self.filename_to_difficulty_map = CUSTOM_STAGED_ORDER
         self.account_for_dataset_proportions = account_for_dataset_proportions
 
@@ -41,6 +41,9 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         self._difficulty_scores_tensor = None
         self._last_active_level = None
         self.filtered_difficulty_scores = None
+
+        # List which holds the percentiles at which a new stage begins
+        self.transition_thresholds = []
 
 
     def score_difficulty(
@@ -56,6 +59,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         # Initialization of difficulty scores on first step
         if global_stepnum == 0:
             self._initialize_difficulty_scores(dataset=dataset, indices_to_score=indices_to_score)
+            self._calculate_transition_thresholds(dataset=dataset)
 
         # Ensure initialization has happened
         if not hasattr(self, "_difficulty_scores_tensor") or self._difficulty_scores_tensor is None:
@@ -66,47 +70,68 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         # If the stage hasn't changed since the last step, return the cached mask immediately
         if (self._last_active_level == active_difficulty_level) and (self.filtered_difficulty_scores is not None):
             return self.filtered_difficulty_scores
+
         # Otherwise update the filtered samples that should be considered for sampling
         else:
             data_cl_logger.info(f"Switching Curriculum Stage: Activating Difficulty Level {active_difficulty_level} at step {global_stepnum}")
             self._update_filtered_difficulty_scores_for_new_stage(active_difficulty_level)
             return self.filtered_difficulty_scores
 
+    def _initialize_difficulty_scores(self, indices_to_score: Sequence[int], dataset: Dataset) -> None:
+        data_cl_logger.info("Initializing Staged Data Split Scorer...")
+        assert "filename" in dataset.column_names, "Dataset must have 'filename' column"
+        self._difficulty_scores = self._get_difficulties_based_on_filename_mapping(indices_to_score=indices_to_score,
+                                                                                   dataset=dataset)
+        # Convert to tensor for vectorization
+        self._difficulty_scores_tensor = torch.tensor(self._difficulty_scores, dtype=torch.float32)
+
+    def _get_corpora_sizes_on_complete_dataset(self, dataset: Dataset):
+        # Get the 'filename' column for every sample in the complete dataset
+        filenames_for_every_sample = dataset["filename"]
+
+        # Map every filename-value in the global dataset to its stage
+        stage_for_every_sample = [
+            self.filename_to_difficulty_map.get(filename_for_specific_sample) for filename_for_specific_sample in
+            filenames_for_every_sample
+        ]
+
+        # Convert to tensor to count frequencies of stages 1 through NUM_STAGES
+        stage_for_every_sample_tensor = torch.tensor(stage_for_every_sample, dtype=torch.long)
+
+        # Calculate counts for stages 1 - 6 (torch starts indexing at 0, so we get stage 0 with 0 counts as well,
+        # which we have to filter out, since our stages are 1-indexed)
+        counts = torch.bincount(stage_for_every_sample_tensor, minlength=NUM_STAGES + 1)
+        filtered_counts = counts[1:NUM_STAGES + 1]
+
+        return filtered_counts
+
+    def _calculate_transition_thresholds(self, dataset: Dataset) -> None:
+        """
+        Calculates the percentile thresholds where the stage transitions happen
+        """
+        if not self.account_for_dataset_proportions:
+            # Equal duration for every stage, e.g. [1/6, 2/6, 3/6, 4/6, 5/6]
+            self.transition_thresholds = [i / NUM_STAGES for i in range(1, NUM_STAGES)]
+            data_cl_logger.info(f"Calculated equal-interval thresholds: {self.transition_thresholds}")
+        else:
+            counts_for_each_corpus = self._get_corpora_sizes_on_complete_dataset(dataset=dataset)
+            total_samples = counts_for_each_corpus.sum()
+            # Calculate cumulative sample sizes, normalize to percentiles
+            cumulative_percentiles = torch.cumsum(counts_for_each_corpus, dim=0).float() / total_samples
+            # Exclude 1.0, this threshold we don't need
+            self.transition_thresholds = cumulative_percentiles[:-1].tolist()
+            data_cl_logger.info(f"Calculated proportion-based thresholds: {self.transition_thresholds}")
+
     def _determine_current_stage(self, max_difficulty_percentile: float) -> int:
-        if self.account_for_dataset_proportions:
-            return self._get_active_stage_considering_dataset_proportions(max_difficulty_percentile=max_difficulty_percentile)
-        else:
-            return self._get_active_stage_regardless_of_dataset_proportion(max_difficulty_percentile=max_difficulty_percentile)
-
-
-    def _get_active_stage_regardless_of_dataset_proportion(self, max_difficulty_percentile: float) -> int:
         """
-        This just maps the max_difficulty_percentile to one of the stages, where each stage has equal proportion regardless of dataset size
+        Determines current stage by iterating through list of percentiles and checking when the current difficulty
+        percentile is smaller than one of our thresholds
         """
-        if max_difficulty_percentile <= 0.0:
-            return 1
-        else:
-            # Map current max difficulty percentile to stages, starting from 1
-            current_stage = math.floor(max_difficulty_percentile * NUM_STAGES) + 1
-            # In case max_difficulty_precentile is 1.0
-            return min(
-                NUM_STAGES,
-                current_stage
-            )
-    def _get_active_stage_considering_dataset_proportions(self, max_difficulty_percentile: float) -> int:
-        """
-        This takes into account the proportion of the dataset, so when the max_difficulty_percentile is 0.3,
-        it will look what is the highest difficulty in 1/3 of the "easiest" data considering the difficulties in
-        CUSTOM_STAGED_ORDER
-        """
-        active_difficulty_level = float(
-            np.percentile(
-                self._difficulty_scores_tensor.numpy(),
-                max_difficulty_percentile * 100,
-                interpolation='nearest'
-            )
-        )
-        return active_difficulty_level
+        for i, threshold in enumerate(self.transition_thresholds):
+            if max_difficulty_percentile < threshold:
+                return i + 1
+        # If we exceed every threshold we are in the last stage
+        return NUM_STAGES
 
     def _update_filtered_difficulty_scores_for_new_stage(self, active_difficulty_level: int) -> None:
         # Strict staging, filter for all samples with the active_difficulty_level of the current stage, where
@@ -127,10 +152,3 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
             difficulty = self.filename_to_difficulty_map.get(current_filename)
             temp_difficulty_scores.append(difficulty)
         return temp_difficulty_scores
-
-    def _initialize_difficulty_scores(self, indices_to_score : Sequence[int], dataset: Dataset) -> None:
-        data_cl_logger.info("Initializing Staged Data Split Scorer...")
-        assert "filename" in dataset.column_names, "Dataset must have 'filename' column"
-        self._difficulty_scores = self._get_difficulties_based_on_filename_mapping(indices_to_score=indices_to_score,  dataset=dataset)
-        # Convert to tensor for vectorization
-        self._difficulty_scores_tensor = torch.tensor(self._difficulty_scores, dtype=torch.float32)

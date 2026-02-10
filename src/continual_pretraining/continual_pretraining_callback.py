@@ -1,6 +1,8 @@
 import math
 import logging
 import bisect
+
+from accelerate.test_utils.scripts.test_sync import step_model
 from transformers import TrainerCallback, get_scheduler
 
 from src.config import BabyLMConfig
@@ -14,29 +16,25 @@ logger = logging.getLogger("Continual Pretraining")
 class ContinualPretrainingCallback(TrainerCallback):
     def __init__(self, trainer, cfg: BabyLMConfig):
         self.trainer = trainer
-
-        # Get the raw transition steps (e.g., [1000, 3000])
-        self.stage_transition_boundaries = self._get_staged_boundaries(cfg)
-
-        # Define the start and end of every stage window
-        total_training_budget = cfg.trainer.max_training_steps
-
-        # A stage starts where the previous one ended (Stage 0 starts at step 0)
-        starts = [0] + self.stage_transition_boundaries
-        # A stage ends where the next one begins (The final stage ends at max_steps)
-        ends = self.stage_transition_boundaries + [total_training_budget]
-
-        # Calculate how many steps each stage actually lasts
-        self.stage_durations = []
-        for stage_start, stage_end in zip(starts, ends):
-            duration = stage_end - stage_start
-            self.stage_durations.append(duration)
-
+        self.cfg = cfg
         self.rewarm_steps_per_stage = cfg.continual_pretraining.rewarm_steps
         self.rewarm_fraction = cfg.continual_pretraining.rewarm_fraction
+        self.total_training_budget = self.cfg.trainer.max_training_steps
+
+        self._is_initialized = False
+        self.stage_durations = []
         self.last_active_stage = -1
 
+
     def on_step_begin(self, args, state, control, **kwargs):
+
+        if not self._is_initialized:
+            # Get current active train dataloader from kwargs, so that boundaries are calculated
+            train_dataloader = kwargs.get("train_dataloader")
+            self._set_stage_boundaries(train_dataloader)
+            self._determine_stage_durations()
+            self._is_initialized = True
+
         current_global_step = state.global_step
 
         # Use bisect to find which "bucket" the current step falls into
@@ -44,7 +42,7 @@ class ContinualPretrainingCallback(TrainerCallback):
         #   Step 500 -> index 0
         #   Step 1500 -> index 1
         #   Step 3500 -> index 2
-        current_stage = bisect.bisect_right(self.stage_transition_boundaries, current_global_step)
+        current_stage = bisect.bisect_left(self.step_boundaries , current_global_step)
 
         # Check if we have crossed into a new stage
         if current_stage != self.last_active_stage:
@@ -70,26 +68,29 @@ class ContinualPretrainingCallback(TrainerCallback):
             logger.info(f"Stage duration: {steps_in_this_stage} steps")
             logger.info(f"Warmup: {warmup_steps} steps")
 
-    def _get_staged_boundaries(self, cfg: BabyLMConfig):
+    def _set_stage_boundaries(self, train_dataloader):
         """
         Calculates the step numbers where the pacing function triggers
         a dataset stage transition.
         """
-        total_steps = cfg.trainer.max_training_steps
-        p_fn = get_pacing_fn(
-            cfg.data_curriculum.pacing_fn_name,
-            total_steps,
-            **cfg.data_curriculum.pacing_fn_kwargs
-        )
 
-        boundaries = []
-        current_stage = 1
-        # Check transitions across the total training budget
-        for step in range(total_steps):
-            percentile = p_fn(step)
-            # Match StagedDataSplitSorter logic: min(NUM_STAGES, floor(p * NUM_STAGES) + 1)
-            stage_at_step = min(NUM_STAGES, math.floor(percentile * NUM_STAGES) + 1)
-            if stage_at_step > current_stage:
-                boundaries.append(step)
-                current_stage = stage_at_step
-        return boundaries
+        # Access difficulty scorer
+        staged_difficulty_scorer = train_dataloader.sampler.difficulty_scorer
+        threshold_percentiles = staged_difficulty_scorer.transition_thresholds
+
+        # Map boundaries percentiles back to steps (integers)
+        step_boundaries = [int(specific_percentile * self.total_training_budget) for specific_percentile in threshold_percentiles]
+
+        self.step_boundaries = step_boundaries
+
+    def _determine_stage_durations(self):
+        # A stage starts where the previous one ended, first starts at step 0
+        starts = [0] + self.step_boundaries
+        # A stage ends where the next one begins, final stage ends at max_steps
+        ends = self.step_boundaries + [self.total_training_budget]
+
+        # Calculate how many steps each stage actually lasts
+        self.stage_durations = []
+        for stage_start, stage_end in zip(starts, ends):
+            duration = stage_end - stage_start
+            self.stage_durations.append(duration)
