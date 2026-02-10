@@ -8,6 +8,17 @@ CUSTOM_STAGED_ORDER = {
     "gutenberg.train": 6,
 }
 
+# Number of tokens for each corpus on the train set
+DATASET_TOKEN_COUNTS = {
+    "childes.dev": 6_164_224,
+    "gutenberg.dev": 3_713_536,
+    "open_subtitles.dev": 3_448_576,
+    "simple_wiki.dev": 2_435_584,
+    "bnc_spoken.dev": 1_331_200,
+    "switchboard.dev": 254_848,
+}
+
+
 # Difficulty order for spoken-first curriculum
 # Lower numbers mean "easier" datasets to start training on
 SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023 = {
