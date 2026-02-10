@@ -31,7 +31,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
     A difficulty scorer that implements distinct stage training.
     """
 
-    def __init__(self, proportion_mode: str, **kwargs: Any):
+    def __init__(self, proportion_mode: str = None, **kwargs: Any):
         super().__init__(**kwargs)
         # Use custom order
         self.filename_to_difficulty_map = CUSTOM_STAGED_ORDER
