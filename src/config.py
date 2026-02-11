@@ -137,6 +137,8 @@ class ContinualPretrainingParams(DictConfig):
     enable_lr_reset: bool = False
     rewarm_steps: Optional[float] = None
     rewarm_fraction: Optional[float] = None
+    data_replay_mode: Optional[str] = None
+    data_replay_fraction: Optional[float] = 0.0
 
 ### Container for entire config ###
 

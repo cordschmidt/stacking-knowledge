@@ -45,3 +45,6 @@ gradual_stacking:
 
 continual_pretraining:
   enable_lr_reset: true
+  rewarm_fraction: 0.1
+  data_replay_mode: "previous_stage_only"
+  data_replay_fraction: 0.05

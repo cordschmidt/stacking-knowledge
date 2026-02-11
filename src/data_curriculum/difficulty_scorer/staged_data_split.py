@@ -31,11 +31,15 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
     A difficulty scorer that implements distinct stage training.
     """
 
-    def __init__(self, proportion_mode: str = None, **kwargs: Any):
+    def __init__(self, proportion_mode: str = None, data_replay_mode: str = None, data_replay_fraction: float = 0.0, **kwargs: Any):
         super().__init__(**kwargs)
         # Use custom order
         self.filename_to_difficulty_map = CUSTOM_STAGED_ORDER
         self.proportion_mode = proportion_mode  # Expects None, sample or token
+
+        # Parameters for data replay
+        self.data_replay_mode = data_replay_mode
+        self.data_replay_fraction = data_replay_fraction
 
         # Optimization caches
         self._difficulty_scores_tensor = None
@@ -152,6 +156,27 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         return NUM_STAGES
 
     def _update_filtered_difficulty_scores_for_new_stage(self, active_difficulty_level: int) -> None:
+        # Use data replay (considering only the previous stage), when enabled and we're
+        # at least in stage 2, as there is otherwise no previous stage
+        if self.data_replay_mode == "previous_stage_only" and active_difficulty_level > 1:
+
+            number_of_tokens_current_stage, number_of_tokens_previous_stage = self._get_token_sizes_for_current_and_previous_stage(active_difficulty_level=active_difficulty_level)
+            weight_mapping = self._get_weight_mapping_for_current_and_previous_stage(number_of_tokens_current_stage=number_of_tokens_current_stage,
+                                                                                     number_of_tokens_previous_stage=number_of_tokens_previous_stage,
+                                                                                     active_difficulty_level=active_difficulty_level)
+
+            # Map the stage IDs in our dataset to the calculated weights
+            mask = weight_mapping[self._difficulty_scores_tensor.long()]
+
+            data_cl_logger.info(
+                f"Replay Active: Stage {active_difficulty_level} (w={weight_mapping[active_difficulty_level]:.4f}), "
+                f"Replaying Stage {active_difficulty_level - 1} (w={weight_mapping[active_difficulty_level - 1]:.4f})"
+            )
+
+        # Case 2: Default / Strict Staging (or Stage 1 where no replay is possible)
+        else:
+            # Strict staging: samples in current stage = 1.0, others = 0.0
+            mask = (self._difficulty_scores_tensor == active_difficulty_level).float()
         # Strict staging, filter for all samples with the active_difficulty_level of the current stage, where
         # samples belonging to the current stage take the value 1.0 and those that are not take the value 0.0
         mask = (self._difficulty_scores_tensor == active_difficulty_level).float()
@@ -170,3 +195,29 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
             difficulty = self.filename_to_difficulty_map.get(current_filename)
             temp_difficulty_scores.append(difficulty)
         return temp_difficulty_scores
+
+    def _get_token_sizes_for_current_and_previous_stage(self, active_difficulty_level: int):
+        token_counts = self._get_corpora_token_sizes()
+
+        # Indices for token_counts tensor (0-indexed)
+        curr_idx = active_difficulty_level - 1
+        prev_idx = active_difficulty_level - 2
+
+        number_of_tokens_current_stage = token_counts[curr_idx]
+        number_of_tokens_previous_stage = token_counts[prev_idx]
+
+        return number_of_tokens_current_stage, number_of_tokens_previous_stage
+
+    def _get_weight_mapping_for_current_and_previous_stage(self, number_of_tokens_current_stage: int, number_of_tokens_previous_stage: int, active_difficulty_level:int):
+        # Calculate weight for current stage, considering data replay
+        weight_current_stage = 1.0 - self.data_replay_fraction
+        # Calculate weight for previous stage while taking into account the number of tokens,
+        # which balances the sampling probability relative to the corpus size
+        weight_previous_stage = self.data_replay_fraction * (number_of_tokens_current_stage / number_of_tokens_previous_stage)
+
+        # Create a mapping for all possible stages (1 to NUM_STAGES)
+        weight_mapping = torch.zeros(NUM_STAGES + 1, dtype=torch.float32)
+        weight_mapping[active_difficulty_level] = weight_current_stage
+        weight_mapping[active_difficulty_level - 1] = weight_previous_stage
+
+        return weight_mapping
