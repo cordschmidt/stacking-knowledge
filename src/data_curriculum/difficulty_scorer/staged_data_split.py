@@ -15,6 +15,7 @@ import numpy as np
 from typing import Any, Sequence
 
 from datasets import Dataset
+from torch import Tensor
 
 # Import base classes
 from .base_difficulty_scorer import BaseDifficultyScorer
@@ -31,7 +32,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
     A difficulty scorer that implements distinct stage training.
     """
 
-    def __init__(self, proportion_mode: str = None, data_replay_mode: str = None, data_replay_fraction: float = 0.0, **kwargs: Any):
+    def __init__(self, proportion_mode: str = None, data_replay_mode: str = None, data_replay_fraction: float = 0.0, data_replay_decay: float = 1.0, **kwargs: Any):
         super().__init__(**kwargs)
         # Use custom order
         self.filename_to_difficulty_map = CUSTOM_STAGED_ORDER
@@ -40,6 +41,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         # Parameters for data replay
         self.data_replay_mode = data_replay_mode
         self.data_replay_fraction = data_replay_fraction
+        self.data_replay_decay = data_replay_decay
 
         # Optimization caches
         self._difficulty_scores_tensor = None
@@ -173,6 +175,11 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
                 f"Replaying Stage {active_difficulty_level - 1} (w={weight_mapping[active_difficulty_level - 1]:.4f})"
             )
 
+        elif self.data_replay_mode == "all_previous_stages" and active_difficulty_level > 1:
+            weight_mapping = self._get_weight_mapping_for_all_previous_weighted(active_difficulty_level)
+            mask = weight_mapping[self._difficulty_scores_tensor.long()]
+            data_cl_logger.info(f"Weighted Decay Replay Active for Stage {active_difficulty_level}")
+
         # Case 2: Default / Strict Staging (or Stage 1 where no replay is possible)
         else:
             # Strict staging: samples in current stage = 1.0, others = 0.0
@@ -220,4 +227,50 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         weight_mapping[active_difficulty_level] = weight_current_stage
         weight_mapping[active_difficulty_level - 1] = weight_previous_stage
 
+        return weight_mapping
+
+    def _get_weight_mapping_for_all_previous_weighted(self, active_difficulty_level):
+
+
+        number_tokens_all_stages = self._get_corpora_token_sizes()
+        number_tokens_current_stage = number_tokens_all_stages[active_difficulty_level - 1]
+
+
+        # Get all previous stages
+        all_previous_stages = list(range(1, active_difficulty_level))
+
+        # Determine decay factors, so that earlier stages may be less likely in current stage
+        normalized_decay_factors = self._calculate_decay_factors_for_all_previous_stages(active_difficulty_level=active_difficulty_level, previous_stages=all_previous_stages)
+
+        # Initialize weight mapping tensor
+        weight_mapping = torch.zeros(NUM_STAGES + 1, dtype=torch.float32)
+
+        # Set current stage weight
+        weight_mapping[active_difficulty_level] = 1.0 - self.data_replay_fraction
+
+        # Include weights for all previous stages based on number of tokens & the weight decay factor
+        weight_mapping = self._get_weight_mapping_for_current_and_all_previous_stages(prev_stages=all_previous_stages, number_tokens_all_stages=number_tokens_all_stages, decay_factors=normalized_decay_factors, weight_mapping=weight_mapping, number_tokens_current_stage=number_tokens_current_stage)
+
+        return weight_mapping
+
+    def _calculate_decay_factors_for_all_previous_stages(self, active_difficulty_level: int, previous_stages: list[int]):
+        # Calculate unnormalized decay factors for all previous stages, where stage (n-1) gets decay^0,
+        # stage (N-2) gets decay^1, ...
+        decay_factors = torch.tensor([
+            self.data_replay_decay ** (active_difficulty_level - 1 - i)
+            for i in previous_stages
+        ], dtype=torch.float32)
+
+        # Normalize decay factors so they sum to 1.0, representing total replay budget
+        normalized_decay_factors = decay_factors / torch.sum(decay_factors)
+        return normalized_decay_factors
+
+    def _get_weight_mapping_for_current_and_all_previous_stages(self, prev_stages: list, number_tokens_all_stages: Tensor, decay_factors: list, weight_mapping, number_tokens_current_stage: Tensor):
+        # Calculate weights for each previous stage
+        for stage_number in prev_stages:
+            number_tokens_stage_i = number_tokens_all_stages[stage_number - 1]
+            # Consider token ratio between current stage and the i-th previous stage in order to ensure correct token-wise representation of the corpora
+            token_ratio = number_tokens_current_stage / number_tokens_stage_i
+            # Calculate the weight for i-th stage
+            weight_mapping[stage_number] = self.data_replay_fraction * token_ratio * decay_factors[stage_number - 1]
         return weight_mapping

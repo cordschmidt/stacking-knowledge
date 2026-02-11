@@ -135,10 +135,11 @@ class GradualStackingParams(DictConfig):
 @dataclass
 class ContinualPretrainingParams(DictConfig):
     enable_lr_reset: bool = False
-    rewarm_steps: Optional[float] = None
-    rewarm_fraction: Optional[float] = None
-    data_replay_mode: Optional[str] = None
-    data_replay_fraction: Optional[float] = 0.0
+    rewarm_steps: Optional[int] = None # Number of warmup-steps per stage (not recommended)
+    rewarm_fraction: Optional[float] = None # Fraction of steps in a stage that should be used for linear warmup of the learning rate in each stage (actual steps of teh stages differ based on the total number of steps in each stage)
+    data_replay_mode: Optional[str] = None # None, previous_stage_only, all_previous_stages
+    data_replay_fraction: Optional[float] = 0.0 # Fraction, how many % of samples from the previous stage(s) should be included when training the current stage
+    data_replay_decay: Optional[float] = 1.0 # Control how fast old stages decay within the data replay
 
 ### Container for entire config ###
 
