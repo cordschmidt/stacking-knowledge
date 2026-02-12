@@ -9,7 +9,7 @@ from src.config import BabyLMConfig
 logger = logging.getLogger("Continual Pretraining")
 
 
-class LearningRateresetCallback(TrainerCallback):
+class LearningRateResetCallback(TrainerCallback):
     def __init__(self, trainer, cfg: BabyLMConfig):
         self.trainer = trainer
         self.cfg = cfg
