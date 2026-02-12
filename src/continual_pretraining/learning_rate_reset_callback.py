@@ -2,13 +2,9 @@ import math
 import logging
 import bisect
 
-from accelerate.test_utils.scripts.test_sync import step_model
 from transformers import TrainerCallback, get_scheduler
 
 from src.config import BabyLMConfig
-from src.data_curriculum.difficulty_scorer.stages import NUM_STAGES
-
-from src.data_curriculum.pacing_fn import get_pacing_fn
 
 logger = logging.getLogger("Continual Pretraining")
 
