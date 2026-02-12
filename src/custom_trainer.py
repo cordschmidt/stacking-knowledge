@@ -21,7 +21,7 @@ from transformers.modeling_utils import unwrap_model
 
 # Local imports
 from .config import BabyLMConfig
-from .continual_pretraining.continual_pretraining_callback import ContinualPretrainingCallback
+from .continual_pretraining.continual_pretraining_callback import LearningRateresetCallback
 # Data curriculum related
 from .data_curriculum.datasampler import CurriculumSampler, DistributedCurriculumSampler
 from .data_curriculum.difficulty_scorer import get_difficulty_scorer
@@ -158,7 +158,7 @@ class CustomTrainer(Trainer):
             if is_staged and should_lr_reset:
                 logger.info("Continual Pre-training enabled: Adding StageResetCallback.")
                 # The callback will handle boundary calculation internally as discussed
-                self.add_callback(ContinualPretrainingCallback(trainer=self, cfg=hydra_config))
+                self.add_callback(LearningRateresetCallback(trainer=self, cfg=hydra_config))
 
         # Flag indicating whether training is distributed across multiple GPUs/processes
         self.is_distributed = self.args.world_size > 1

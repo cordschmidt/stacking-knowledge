@@ -13,7 +13,7 @@ from src.data_curriculum.pacing_fn import get_pacing_fn
 logger = logging.getLogger("Continual Pretraining")
 
 
-class ContinualPretrainingCallback(TrainerCallback):
+class LearningRateresetCallback(TrainerCallback):
     def __init__(self, trainer, cfg: BabyLMConfig):
         self.trainer = trainer
         self.cfg = cfg
