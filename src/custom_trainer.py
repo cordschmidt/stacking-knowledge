@@ -21,7 +21,7 @@ from transformers.modeling_utils import unwrap_model
 
 # Local imports
 from .config import BabyLMConfig
-from .continual_pretraining.continual_pretraining_callback import LearningRateresetCallback
+from .continual_pretraining.learning_rate_reset_callback import LearningRateresetCallback
 # Data curriculum related
 from .data_curriculum.datasampler import CurriculumSampler, DistributedCurriculumSampler
 from .data_curriculum.difficulty_scorer import get_difficulty_scorer
