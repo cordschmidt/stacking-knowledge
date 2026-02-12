@@ -25,6 +25,7 @@ from .registry import register_difficulty_scorer
 from .stages import CUSTOM_STAGED_ORDER, NUM_STAGES, DATASET_TOKEN_COUNTS
 
 data_cl_logger = logging.getLogger("Data Curriculum")
+cp_logger = logging.getLogger("Continual Pretraining")
 
 @register_difficulty_scorer("staged_data_split")
 class StagedDataSplitSorter(BaseDifficultyScorer):
@@ -170,7 +171,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
             # Map the stage IDs in our dataset to the calculated weights
             mask = weight_mapping[self._difficulty_scores_tensor.long()]
 
-            data_cl_logger.info(
+            cp_logger.info(
                 f"Replay Active: Stage {active_difficulty_level} (w={weight_mapping[active_difficulty_level]:.4f}), "
                 f"Replaying Stage {active_difficulty_level - 1} (w={weight_mapping[active_difficulty_level - 1]:.4f})"
             )
@@ -178,7 +179,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         elif self.data_replay_mode == "all_previous_stages" and active_difficulty_level > 1:
             weight_mapping = self._get_weight_mapping_for_all_previous_weighted(active_difficulty_level)
             mask = weight_mapping[self._difficulty_scores_tensor.long()]
-            data_cl_logger.info(f"Weighted Decay Replay Active for Stage {active_difficulty_level}")
+            cp_logger.info(f"Weighted Decay Replay Active for Stage {active_difficulty_level}")
 
         # Case 2: Default / Strict Staging (or Stage 1 where no replay is possible)
         else:

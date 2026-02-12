@@ -83,6 +83,7 @@ class TrainerParams(DictConfig):
     eval_msgs: bool
     eval_perplexity: bool
     lr_scheduler_type: str = "linear"
+    lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
 
 
 ### Curriculum learning parameter: can be either objective or data-driven ###
@@ -135,6 +136,7 @@ class GradualStackingParams(DictConfig):
 @dataclass
 class ContinualPretrainingParams(DictConfig):
     enable_lr_reset: bool = False
+    max_rewarm_lr: Optional[float] = None  # Maximal LR for all stages after the first
     rewarm_steps: Optional[int] = None # Number of warmup-steps per stage (not recommended)
     rewarm_fraction: Optional[float] = None # Fraction of steps in a stage that should be used for linear warmup of the learning rate in each stage (actual steps of teh stages differ based on the total number of steps in each stage)
     data_replay_mode: Optional[str] = None # None, previous_stage_only, all_previous_stages

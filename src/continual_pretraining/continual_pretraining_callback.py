@@ -20,6 +20,7 @@ class ContinualPretrainingCallback(TrainerCallback):
         self.rewarm_steps_per_stage = cfg.continual_pretraining.rewarm_steps
         self.rewarm_fraction = cfg.continual_pretraining.rewarm_fraction
         self.total_training_budget = self.cfg.trainer.max_training_steps
+        self.max_rewarm_lr = cfg.continual_pretraining.max_rewarm_lr
 
         self._is_initialized = False
         self.stage_durations = []
@@ -78,21 +79,25 @@ class ContinualPretrainingCallback(TrainerCallback):
             self.stage_durations.append(duration)
 
     def _reset_learning_rate_scheduler_for_new_stage(self, current_stage, current_global_step, lr_scheduler_type):
+
         steps_in_this_stage = self.stage_durations[current_stage]
         warmup_steps = self._calculate_warmup_steps(steps_in_this_stage=steps_in_this_stage)
+
+        logger.info(f"--- Continual Pre-Training: Stage Transition Detected ---")
+        logger.info(f"Now starting Stage {current_stage + 1} at global step {current_global_step}")
+        logger.info(f"Stage duration: {steps_in_this_stage} steps")
+        logger.info(f"Warmup: {warmup_steps} steps")
+
+        self._set_max_learning_rate_for_current_stage(current_stage=current_stage)
 
         # Re-initialize the Hugging Face scheduler for the duration of this specific stage
         self.trainer.lr_scheduler = get_scheduler(
             name=lr_scheduler_type,
             optimizer=self.trainer.optimizer,
             num_warmup_steps=warmup_steps,
-            num_training_steps=steps_in_this_stage
+            num_training_steps=steps_in_this_stage,
+            scheduler_specific_kwargs= self.cfg.trainer.lr_scheduler_kwargs
         )
-
-        logger.info(f"--- Continual Pre-Training: Stage Transition Detected ---")
-        logger.info(f"Now starting Stage {current_stage + 1} at global step {current_global_step}")
-        logger.info(f"Stage duration: {steps_in_this_stage} steps")
-        logger.info(f"Warmup: {warmup_steps} steps")
 
     def _calculate_warmup_steps(self, steps_in_this_stage):
         # Determine warmup steps, use fraction if available, otherwise use fixed steps
@@ -101,3 +106,12 @@ class ContinualPretrainingCallback(TrainerCallback):
         else:
             warmup_steps = self.rewarm_steps_per_stage if self.rewarm_steps_per_stage is not None else 0
         return warmup_steps
+
+    def _set_max_learning_rate_for_current_stage(self, current_stage: int):
+        # Use max_rewarm_lr for stages > 0 if provided
+        if current_stage > 0 and self.max_rewarm_lr is not None:
+            logger.info(f"Max Learning Rate: {self.max_rewarm_lr} for stage {current_stage + 1}")
+            max_lr = self.max_rewarm_lr
+            # Set the initial learning rate for every parameter
+            for param_group in self.trainer.optimizer.param_groups:
+                param_group['initial_lr'] = max_lr
