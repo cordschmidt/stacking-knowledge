@@ -1,8 +1,12 @@
 import logging
 
+from sympy.solvers.diophantine.diophantine import equivalent
+
 from src.config import BabyLMConfig
 from src.data_curriculum.difficulty_scorer.stages import NUM_STAGES
 from omegaconf import OmegaConf
+
+from src.gradual_stacking.scheduler import PropAlphaScheduler
 
 DRY_RUN_TRAIN_STEPS = 100
 DRY_RUN_WARMUP_STEPS = 10
@@ -172,3 +176,41 @@ def force_ignoring_dataset_sizes_in_staged_data_curriculum(cfg: BabyLMConfig):
         logger.info(f"In order to align the data curriculum with the prop-alpha stages, 'account_for_dataset_proportions' has to be set to False")
         cfg.data_curriculum.difficulty_scorer_kwargs["account_for_dataset_proportions"] = False
         logger.info(f"'account_for_dataset_proportions' was set to {cfg.data_curriculum.difficulty_scorer_kwargs["account_for_dataset_proportions"]}")
+
+def consider_step_adjustment_for_compute_equivalent_model_training(cfg: BabyLMConfig, model):
+    if cfg.gradual_stacking.enabled and cfg.gradual_stacking.number_params_compute_equivalent_model is not None:
+        adjust_steps_based_on_params_of_compute_equivalent_model(cfg=cfg, model=model)
+
+def adjust_steps_based_on_params_of_compute_equivalent_model(cfg: BabyLMConfig, model):
+    scheduler = PropAlphaScheduler(
+        total_training_steps=cfg.trainer.max_training_steps,  # placeholder
+        k_number_of_stages=cfg.gradual_stacking.k_number_of_stages,
+        alpha=cfg.gradual_stacking.alpha
+    )
+    # Estimate these from your model config
+    number_of_static_params, number_of_params_per_block = estimate_parameter_counts(model=model, layer_per_block=cfg.gradual_stacking.layer_per_block)
+
+    new_max_steps = scheduler.get_compute_equivalent_steps(
+        baseline_steps=cfg.trainer.max_training_steps,
+        baseline_params=cfg.gradual_stacking.number_params_compute_equivalent_model,
+        number_of_static_params=number_of_static_params,
+        number_of_params_per_block=number_of_params_per_block
+    )
+    logger.info(f"Adjusting max_steps from {cfg.trainer.max_training_steps} to {new_max_steps} for app. compute equivalence.")
+    cfg.trainer.max_training_steps = new_max_steps
+
+
+def estimate_parameter_counts(model, layer_per_block):
+    # Get all static params
+    embed_params = sum(p.numel() for p in model.model.embed_tokens.parameters())
+    head_params = sum(p.numel() for p in model.lm_head.parameters())
+    final_norm_params = sum(p.numel() for p in model.model.norm.parameters())
+    number_of_static_params = embed_params + head_params + final_norm_params
+
+    # Calculate parameters for a single layer, e.g. based on first layer
+    number_of_params_single_layer = sum(p.numel() for p in model.model.layers[0].parameters())
+
+    # Calculate number of parameters for one block, which gets duplicated in every stage
+    number_of_params_per_block = number_of_params_single_layer * layer_per_block
+
+    return number_of_static_params, number_of_params_per_block

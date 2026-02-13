@@ -10,7 +10,8 @@ from src.custom_trainer import CustomTrainer
 from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer, preprocess_data
 from src.helper.setup_environment import setup_environment
 from src.helper.trainer_init import create_trainer
-from src.helper.validate_config import validate_and_adjust_config
+from src.helper.validate_config import validate_and_adjust_config, \
+    consider_step_adjustment_for_compute_equivalent_model_training
 from src.helper.wandb_logging import enable_wandb_logging
 
 # Logger for this file
@@ -52,6 +53,7 @@ def main(cfg: BabyLMConfig):
     setup_environment(cfg)
     validate_and_adjust_config(cfg=cfg)
     model, tokenizer, dataset = load_dataset_model_and_tokenizer(cfg)
+    consider_step_adjustment_for_compute_equivalent_model_training(cfg=cfg, model=model)
     train_dataset, eval_dataset = preprocess_data(cfg=cfg, tokenizer=tokenizer, dataset=dataset)
     curriculum_learning_table = enable_wandb_logging(cfg)
     trainer, training_args = create_trainer(cfg=cfg, model=model, tokenizer=tokenizer, train_dataset=train_dataset, eval_dataset=eval_dataset, curriculum_learning_table=curriculum_learning_table)

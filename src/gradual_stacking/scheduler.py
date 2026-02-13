@@ -74,3 +74,26 @@ class PropAlphaScheduler:
                 return i
         # If step >= total_steps, return the last stage index
         return self.k_number_of_stages - 1
+
+    def get_compute_equivalent_steps(self, baseline_steps: int, baseline_params: int, number_of_static_params: int, number_of_params_per_block: int):
+        """
+        Calculates the number of compute equivalent steps based on the given prop-alpha schedule in order to align training duration computationally
+        """
+        # Calculate weights for each stage
+        unnormalized_weights = [i ** self.alpha for i in range(1, self.k_number_of_stages + 1)]
+        sum_of_weights = sum(unnormalized_weights)
+        # Calculate normalized weights first
+        normalized_weights = [w / sum_of_weights for w in unnormalized_weights]
+
+        # Weight the number of params in each stage by the time spent in this stage
+        sum_weighted_params = 0
+        for i in range(1, self.k_number_of_stages + 1):
+            # Calculate parameters for the current stage i
+            parameters_in_stage_i = number_of_static_params + i * number_of_params_per_block
+            sum_weighted_params += parameters_in_stage_i * normalized_weights[i - 1]
+
+        # Expansion factor represents, how much shorter/longer we must train to match the total compute of the baseline model
+        expansion_factor = baseline_params / sum_weighted_params
+        # Adjust baseline steps by this factor
+        compute_equivalent_steps = int(baseline_steps * expansion_factor)
+        return compute_equivalent_steps

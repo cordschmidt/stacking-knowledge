@@ -41,6 +41,8 @@ def load_dataset_model_and_tokenizer(cfg: BabyLMConfig):
             tokenizer.vocab_size == model.config.vocab_size
     ), "Tokenizer and model vocab size mismatch"
 
+    print_model_stats(model=model)
+
     return model, tokenizer, dataset
 
 def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
@@ -134,3 +136,10 @@ def log_corpus_distribution(dataset, name="dataset", corpus_col_name="filename")
     # Log the sample count and relative proportion for each corpus
     for corpus, count in counts_per_corpus.items():
         logger.info(f"  {corpus}: {count} samples ({count/total:.2%})")
+
+def print_model_stats(model, name="Model"):
+    num_layers = len(model.model.layers)
+    num_params = sum(p.numel() for p in model.parameters())
+    logger.info(f"\n{name} size:")
+    logger.info(f"  Number of layers: {num_layers}")
+    logger.info(f"  Number of parameters: {num_params:,}\n")
