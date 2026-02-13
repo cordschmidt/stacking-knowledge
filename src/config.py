@@ -132,6 +132,7 @@ class GradualStackingParams(DictConfig):
     k_number_of_stages: Optional[int] = 4 # Number of stages for model growing, the model will be grown k-1 times. The final number of layers in the model will be k * layer_per_block (the final model consists of k blocks)
     alpha: Optional[float] = 1.0 # Factor for determining the spacing between the growing stages, greater alpha leads to more training budget spend on later stages
     layer_per_block: Optional[int] = 1 # Number of layers that are considered as one block - per stage, the middle block of layers will be duplicated
+    number_params_compute_equivalent_model: Optional[int] = None # Number of parameters of a (constant-sized) model, that the gradual stacking model should be compared to. Based on the size differences, steps will be adjusted in order to app. match compute equivalence (number of steps in config must be the same)
 
 @dataclass
 class ContinualPretrainingParams(DictConfig):
