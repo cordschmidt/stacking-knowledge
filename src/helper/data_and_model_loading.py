@@ -137,9 +137,16 @@ def log_corpus_distribution(dataset, name="dataset", corpus_col_name="filename")
     for corpus, count in counts_per_corpus.items():
         logger.info(f"  {corpus}: {count} samples ({count/total:.2%})")
 
+
 def print_model_stats(model, name="Model"):
     num_layers = len(model.model.layers)
-    num_params = sum(p.numel() for p in model.parameters())
+    total_params = sum(p.numel() for p in model.parameters())
+
+    # Calculate embedding parameters based on the Llama model structure
+    num_embed_params = sum(p.numel() for p in model.model.embed_tokens.parameters())
+    num_non_embed_params = total_params - num_embed_params
+
     logger.info(f"\n{name} size:")
     logger.info(f"  Number of layers: {num_layers}")
-    logger.info(f"  Number of parameters: {num_params:,}\n")
+    logger.info(f"  Total parameters: {total_params:,}")
+    logger.info(f"  Non-embedding parameters: {num_non_embed_params:,}\n")

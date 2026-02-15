@@ -1,6 +1,7 @@
 import logging
 
 from sympy.solvers.diophantine.diophantine import equivalent
+from torch.fx.experimental.migrate_gradual_types.constraint_generator import embedding_inference_rule
 
 from src.config import BabyLMConfig
 from src.data_curriculum.difficulty_scorer.stages import NUM_STAGES
@@ -178,7 +179,7 @@ def force_ignoring_dataset_sizes_in_staged_data_curriculum(cfg: BabyLMConfig):
         logger.info(f"'account_for_dataset_proportions' was set to {cfg.data_curriculum.difficulty_scorer_kwargs["account_for_dataset_proportions"]}")
 
 def consider_step_adjustment_for_compute_equivalent_model_training(cfg: BabyLMConfig, model):
-    if cfg.gradual_stacking.enabled and cfg.gradual_stacking.number_params_compute_equivalent_model is not None:
+    if cfg.gradual_stacking.enabled and cfg.gradual_stacking.number_non_embedding_params_compute_equivalent_model is not None:
         adjust_steps_based_on_params_of_compute_equivalent_model(cfg=cfg, model=model)
 
 def adjust_steps_based_on_params_of_compute_equivalent_model(cfg: BabyLMConfig, model):
@@ -188,12 +189,12 @@ def adjust_steps_based_on_params_of_compute_equivalent_model(cfg: BabyLMConfig, 
         alpha=cfg.gradual_stacking.alpha
     )
     # Estimate these from your model config
-    number_of_static_params, number_of_params_per_block = estimate_parameter_counts(model=model, layer_per_block=cfg.gradual_stacking.layer_per_block)
+    number_of_static_non_embedding_params, number_of_params_per_block = estimate_parameter_counts(model=model, layer_per_block=cfg.gradual_stacking.layer_per_block)
 
     new_max_steps = scheduler.get_compute_equivalent_steps(
         baseline_steps=cfg.trainer.max_training_steps,
-        baseline_params=cfg.gradual_stacking.number_params_compute_equivalent_model,
-        number_of_static_params=number_of_static_params,
+        baseline_params=cfg.gradual_stacking.number_non_embedding_params_compute_equivalent_model,
+        number_of_static_non_embedding_params=number_of_static_non_embedding_params,
         number_of_params_per_block=number_of_params_per_block
     )
     logger.info(f"Adjusting max_steps from {cfg.trainer.max_training_steps} to {new_max_steps} for app. compute equivalence.")
@@ -202,10 +203,9 @@ def adjust_steps_based_on_params_of_compute_equivalent_model(cfg: BabyLMConfig, 
 
 def estimate_parameter_counts(model, layer_per_block):
     # Get all static params
-    embed_params = sum(p.numel() for p in model.model.embed_tokens.parameters())
     head_params = sum(p.numel() for p in model.lm_head.parameters())
     final_norm_params = sum(p.numel() for p in model.model.norm.parameters())
-    number_of_static_params = embed_params + head_params + final_norm_params
+    number_of_static_non_embedding_params = head_params + final_norm_params
 
     # Calculate parameters for a single layer, e.g. based on first layer
     number_of_params_single_layer = sum(p.numel() for p in model.model.layers[0].parameters())
@@ -213,4 +213,4 @@ def estimate_parameter_counts(model, layer_per_block):
     # Calculate number of parameters for one block, which gets duplicated in every stage
     number_of_params_per_block = number_of_params_single_layer * layer_per_block
 
-    return number_of_static_params, number_of_params_per_block
+    return number_of_static_non_embedding_params, number_of_params_per_block

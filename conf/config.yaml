@@ -44,7 +44,7 @@ gradual_stacking:
   k_number_of_stages: 6
   alpha: 0.0
   layer_per_block: 1
-  number_params_compute_equivalent_model: 10_531_072
+  number_non_embedding_params_compute_equivalent_model: 8_433_920
 
 continual_pretraining:
   enable_lr_reset: False
