@@ -38,6 +38,21 @@ logger = logging.getLogger(__name__)
 data_cl_logger = logging.getLogger("Data Curriculum")
 
 
+class FLOPTrainingLimitCallback(TrainerCallback):
+    """
+    A callback that monitors training progress and signals to stop
+    if step or FLOP limits are reached.
+    """
+
+    def __init__(self, max_flops: Optional[float] = None):
+        self.max_flops = max_flops
+
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        if self.max_flops is not None and state.total_flos >= self.max_flops:
+            logger.info(f"FLOP limit reached: {state.total_flos} >= {self.max_flops}. Stopping training.")
+            control.should_training_stop = True
+
+
 class CurriculumLearningCallback(TrainerCallback):
     """
     A TrainerCallback that updates the data sampler and data collator with the current global step of training.
@@ -159,6 +174,13 @@ class CustomTrainer(Trainer):
                 logger.info("Continual Pre-training enabled: Adding StageResetCallback.")
                 # The callback will handle boundary calculation internally as discussed
                 self.add_callback(LearningRateResetCallback(trainer=self, cfg=hydra_config))
+
+        # If FLOP limit is provided, add callback to monitor that
+        if self.hydra_config.trainer.max_flops is not None:
+            # Add the limit callback
+            self.add_callback(
+                FLOPTrainingLimitCallback(max_flops=self.hydra_config.trainer.max_flops)
+            )
 
         # Flag indicating whether training is distributed across multiple GPUs/processes
         self.is_distributed = self.args.world_size > 1
@@ -295,6 +317,7 @@ class CustomTrainer(Trainer):
             start_time (`Optional[float]`):
                 The start of training.
         """
+        logs["train_cumulative_flops"] = self.state.total_flos
         if self.state.epoch is not None:
             logs["epoch"] = self.state.epoch
         if self.args.include_num_input_tokens_seen:
