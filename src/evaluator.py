@@ -128,11 +128,20 @@ class ZeroShotEvaluator(object):
 
         # Make sure to pass an absolute path
         model_path_absolute = Path(self.out_dir).resolve()
-        cmd = (
-            f"cd eval_pipeline && "
-            f"./eval_zero_shot_fast.sh {model_path_absolute} "
-            f"{checkpoint_name} causal"
-        )
+        # Run fast evaluation in dry run
+        if self.dry_run:
+            cmd = (
+                f"cd eval_pipeline && "
+                f"./eval_zero_shot_fast.sh {model_path_absolute} "
+                f"{checkpoint_name} causal"
+            )
+        else:
+            cmd = (
+                f"cd eval_pipeline && "
+                f"./eval_zero_shot.sh "
+                f"{model_path_absolute} "
+                f"causal "
+            )
         # If using dummy eval data, don't run script
         if self.use_dummy_eval_data:
             logger.info(
@@ -161,13 +170,24 @@ class ZeroShotEvaluator(object):
         else:
             # Go to result directory
             results_dir = Path("eval_pipeline/results")
-            eval_output_dir = (
-                    results_dir
-                    / self.experiment_name
-                    / checkpoint_name
-                    / "zero_shot"
-                    / "causal"
-            )
+            if self.dry_run:
+                eval_output_dir = (
+                        results_dir
+                        / self.experiment_name
+                        / checkpoint_name
+                        / "zero_shot"
+                        / "causal"
+                )
+            # For full BLiMP evaluation we cannot provide the checkpoint / revision name,
+            # instead it will always be saved in the "main" checkpoint / revision
+            else:
+                eval_output_dir = (
+                        results_dir
+                        / self.experiment_name
+                        / "main"
+                        / "zero_shot"
+                        / "causal"
+                )
 
         # Get all accuracies from the evaluation results of the script
         accuracies = gather_results_from_eval_pipeline(eval_output_dir)
@@ -183,11 +203,11 @@ class ZeroShotEvaluator(object):
                     f"Local debugging: No evaluation results files will be removed"
                 )
             else:
-                self.move_eval_results_to_project_root(eval_output_dir)
+                self.move_eval_results_to_project_root(eval_output_dir, checkpoint_name)
 
         return accuracies
 
-    def move_eval_results_to_project_root(self, eval_output_dir):
+    def move_eval_results_to_project_root(self, eval_output_dir, checkpoint_name):
         """
         Move all evaluation results from eval_output_dir into a new
         results/ folder at the project root, preserving the full hierarchy
@@ -219,6 +239,9 @@ class ZeroShotEvaluator(object):
 
         relative_path = Path(*eval_output_dir.parts[results_index + 1:])
         new_results_dir = project_root / "results" / relative_path
+        if not self.dry_run:
+            # Replace main folder when using full BLiMP evaluation (when not doing dry_runs)
+            new_results_dir = Path(*(checkpoint_name if p == "main" else p for p in new_results_dir.parts))
         new_results_dir.parent.mkdir(parents=True, exist_ok=True)
 
         # Move the directory
