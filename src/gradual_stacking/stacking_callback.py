@@ -12,10 +12,12 @@ logger = logging.getLogger("Gradual Stacking")
 
 
 class GradualStackingCallback(TrainerCallback):
-    def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float, layer_per_block: int):
+    def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float, layer_per_block: int, align_with_staged_data_curriculum: bool):
         if not isinstance(layer_per_block, int) or layer_per_block <= 0:
             raise ValueError(f"layer_per_block must be a positive integer, got {layer_per_block}")
         self.block_size = layer_per_block
+        self.align_with_staged_data_curriculum = align_with_staged_data_curriculum
+        self.total_training_steps = total_training_steps
         # Prepare set for tracking the steps at which the model has been grown
         self._grown_steps = set()
         # Initialize Prop-alpha scheduler
@@ -26,6 +28,33 @@ class GradualStackingCallback(TrainerCallback):
         )
         # Calculate the growing schedule
         self.steps_at_which_model_should_be_grown = set(self.scheduler.get_growing_steps())
+        self._curriculum_alignment_is_initialized = False
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        """Ensures boundaries are synced with the curriculum before the first step."""
+        if self.align_with_staged_data_curriculum and not self._curriculum_alignment_is_initialized:
+            logger.info("Aligning Gradual Stacking stage boundaries with Staged Data Curriculum...")
+            self._initialize_stage_boundaries_from_dataloader(train_dataloader=kwargs.get("train_dataloader"))
+
+    def _initialize_stage_boundaries_from_dataloader(self, train_dataloader):
+        self._set_stage_boundaries_in_callback(train_dataloader)
+        self._curriculum_alignment_is_initialized = True
+
+    def _set_stage_boundaries_in_callback(self, train_dataloader):
+        """
+        Calculates the step numbers where the pacing function triggers
+        a dataset stage transition.
+        """
+
+        # Access difficulty scorer
+        staged_difficulty_scorer = train_dataloader.sampler.difficulty_scorer
+        threshold_percentiles = staged_difficulty_scorer.transition_thresholds
+
+        # Map boundaries percentiles back to steps (integers)
+        step_boundaries = [int(specific_percentile * self.total_training_steps) + 1 for specific_percentile in threshold_percentiles]
+        logger.info(f"Old step boundaries: {self.steps_at_which_model_should_be_grown}")
+        self.steps_at_which_model_should_be_grown = step_boundaries
+        logger.info(f"New step boundaries after alignment: {self.steps_at_which_model_should_be_grown}")
 
     def on_step_end(self, args, state, control, model=None, optimizer=None, **kwargs):
 

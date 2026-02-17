@@ -35,6 +35,7 @@ def do_additional_config_validations(cfg: BabyLMConfig):
         validate_data_replay_mode(cfg=cfg)
         validate_data_replay_fraction_is_valid(cfg=cfg)
         validate_data_replay_decay(cfg=cfg)
+    validate_gradual_stacking_params(cfg=cfg)
 
 def validate_prop_alpha_aligned_data_curriculum_pacing(cfg: BabyLMConfig):
     if cfg.data_curriculum and \
@@ -114,6 +115,20 @@ def validate_data_replay_decay(cfg):
         raise ValueError(
             f"Configuration Error: 'data_replay_fraction' has to be > 0.0 and <= 1.0, but got {data_replay_fraction} instead"
         )
+
+def validate_gradual_stacking_params(cfg: BabyLMConfig):
+    if cfg.gradual_stacking.enabled and cfg.gradual_stacking.align_with_staged_data_curriculum:
+        if cfg.data_curriculum is None:
+            raise ValueError(
+                f"Configuration Error: 'gradual_stacking.align_with_staged_data_curriculum' for continual pretraining is \n"
+                f"set to True, but can only be used when data_curriculum is active"
+            )
+        if cfg.data_curriculum.difficulty_scorer_name != "staged_data_split":
+            raise ValueError(
+                f"Configuration Error: 'gradual_stacking.align_with_staged_data_curriculum' for continual pretraining is \n"
+                f"set to True, but this can only be used with the 'staged_data_split' data curriculum scorer. \n"
+                f"Current scorer: '{cfg.data_curriculum.difficulty_scorer_name}'"
+            )
 
 def adjust_parameters_in_config_for_special_setups(cfg: BabyLMConfig):
     # Adjust training parameters in dry run for faster testing & debugging

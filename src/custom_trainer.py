@@ -173,7 +173,8 @@ class CustomTrainer(Trainer):
             stacking_callback = GradualStackingCallback(total_training_steps = self.hydra_config.trainer.max_training_steps,
                                                         k_number_of_stages = self.hydra_config.gradual_stacking.k_number_of_stages,
                                                         alpha = self.hydra_config.gradual_stacking.alpha,
-                                                        layer_per_block = self.hydra_config.gradual_stacking.layer_per_block)
+                                                        layer_per_block = self.hydra_config.gradual_stacking.layer_per_block,
+                                                        align_with_staged_data_curriculum=self.hydra_config.gradual_stacking.align_with_staged_data_curriculum)
             self.add_callback(stacking_callback)
 
         # Conditional addition of the ContinualPretrainingCallback
@@ -186,7 +187,7 @@ class CustomTrainer(Trainer):
             is_staged = self.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split"
 
             if is_staged and should_lr_reset:
-                logger.info("Continual Pre-training enabled: Adding StageResetCallback.")
+                logger.info("Continual Pre-training enabled: Adding LearningRateResetCallback")
                 # The callback will handle boundary calculation internally as discussed
                 self.add_callback(LearningRateResetCallback(trainer=self, cfg=hydra_config))
 
