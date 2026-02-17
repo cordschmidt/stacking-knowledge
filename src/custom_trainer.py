@@ -32,10 +32,25 @@ from .evaluator import ZeroShotEvaluator, FinetuneEvaluator
 from src.helper.dataset_preprocessor import base_collate_fn
 from src.helper.inference import compute_trainer_perplexity, prepare_dataset_for_ppl_inference
 from .gradual_stacking.stacking_callback import GradualStackingCallback
+from .helper.visualization import calculate_and_save_layer_similarity_plot
 
 # Set up logging for different components of the trainer
 logger = logging.getLogger(__name__)
 data_cl_logger = logging.getLogger("Data Curriculum")
+
+class FinalLayerSimilarityCallback(TrainerCallback):
+    """
+    Saves the layer similarity matrix at the very end of training for any model.
+    """
+    def on_train_end(self, args, state, control, model=None, **kwargs):
+        if model is not None:
+            # Save in the root output directory (results/run_name/)
+            calculate_and_save_layer_similarity_plot(
+                model,
+                output_dir=os.path.join(args.output_dir, f"checkpoint-{state.global_step}"),
+                stage_name=None,
+                step=state.global_step
+            )
 
 
 class FLOPTrainingLimitCallback(TrainerCallback):
@@ -181,6 +196,9 @@ class CustomTrainer(Trainer):
             self.add_callback(
                 FLOPTrainingLimitCallback(max_flops=self.hydra_config.trainer.max_flops)
             )
+
+        # Add the general similarity callback (runs for all models at the end)
+        self.add_callback(FinalLayerSimilarityCallback())
 
         # Flag indicating whether training is distributed across multiple GPUs/processes
         self.is_distributed = self.args.world_size > 1

@@ -1,9 +1,12 @@
 import copy
 import logging
 import math
+import os
+
 import torch.distributed as dist
 from transformers import TrainerCallback
 from src.gradual_stacking.scheduler import PropAlphaScheduler
+from src.helper.visualization import calculate_and_save_layer_similarity_plot
 
 logger = logging.getLogger("Gradual Stacking")
 
@@ -43,6 +46,13 @@ class GradualStackingCallback(TrainerCallback):
                 f"Number of layers ({len(model.model.layers)}) is not divisible by block size ({self.block_size}). "
                 "This should not happen and might be caused by a bug inside the code"
             )
+
+        calculate_and_save_layer_similarity_plot(
+            model,
+            output_dir=os.path.join(args.output_dir, f"checkpoint-{state.global_step}"),
+            stage_name=f"end_of_stage_{self.scheduler.get_current_stage(state.global_step)}",
+            step=state.global_step
+        )
 
         # Log model stats before growth
         logger.info(f"Growing model at step {state.global_step}")
