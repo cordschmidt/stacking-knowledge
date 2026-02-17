@@ -16,6 +16,8 @@ class ExperimentParams(DictConfig):
     # Name of the group that the current experiment belongs to, analogous to 'project' in wandb
     group: str = MISSING
 
+    full_determinism: bool = False
+
     # whether to run a minimal version of the experiment
     dry_run: bool = False
 

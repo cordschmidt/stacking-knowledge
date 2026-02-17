@@ -71,7 +71,7 @@ class CurriculumIterMixin:
 
             # Sample a batch of indices biased by difficulty (via multinomial)
             for i in torch.multinomial(
-                    difficulty_scores_tensor, self.batch_size, replacement=False
+                    difficulty_scores_tensor, self.batch_size, replacement=False, generator=self.generator
             ):
                 yield self.indices[i]
 

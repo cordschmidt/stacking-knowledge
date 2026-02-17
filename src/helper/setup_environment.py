@@ -40,7 +40,7 @@ def setup_environment(cfg: BabyLMConfig):
     ), "HF_READ_TOKEN and HF_WRITE_TOKEN need to be set as environment variables"
 
     # Set seed
-    set_seed(cfg.experiment.seed)
+    set_seed(cfg, cfg.experiment.seed)
 
 def log_cuda_info():
     logger.info("=== PyTorch / CUDA diagnostics ===")
@@ -58,7 +58,7 @@ def log_cuda_info():
 
     logger.info("=================================")
 
-def set_seed(seed: int) -> None:
+def set_seed(cfg: BabyLMConfig, seed: int) -> None:
     """Sets seed for reproducibility"""
     if seed < 0:
         logger.warning("Skipping seed setting for reproducibility")
@@ -70,5 +70,7 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if cfg.experiment.full_determinism:
+        torch.use_deterministic_algorithms(True, warn_only=True)
     if torch.cuda.is_available() > 0:
         torch.cuda.manual_seed_all(seed)

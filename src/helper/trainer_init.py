@@ -13,6 +13,7 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
         do_train=True,  # Enable training
         do_eval=True,  # Enable evaluation during training
         do_predict=False,  # Disable prediction on test set (can be enabled separately)
+        full_determinism=cfg.experiment.full_determinism,
 
         # Batch size per device (GPU/CPU)
         per_device_train_batch_size=cfg.trainer.batch_size,
@@ -24,6 +25,7 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
         warmup_steps=cfg.trainer.num_warmup_steps,  # Number of warmup steps for learning rate scheduler
 
         seed=cfg.experiment.seed,  # Random seed for reproducibility
+        data_seed=cfg.experiment.seed,
 
         # Evaluation strategy to evaluate every few steps
         eval_strategy="steps",

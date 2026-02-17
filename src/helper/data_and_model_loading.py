@@ -71,8 +71,8 @@ def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
         logger.info(
             f"Running in dry run mode -- stratified subsampling train and eval datasets by {DRY_RUN_SUBSAMPLE_FACTOR}x"
         )
-        train_dataset = stratified_subsample_by_corpus(train_dataset, subsample_factor=DRY_RUN_SUBSAMPLE_FACTOR, corpora_column_name="filename")
-        eval_dataset = stratified_subsample_by_corpus(eval_dataset, subsample_factor=DRY_RUN_SUBSAMPLE_FACTOR, corpora_column_name="filename")
+        train_dataset = stratified_subsample_by_corpus(train_dataset, subsample_factor=DRY_RUN_SUBSAMPLE_FACTOR, corpora_column_name="filename", seed=cfg.experiment.seed)
+        eval_dataset = stratified_subsample_by_corpus(eval_dataset, subsample_factor=DRY_RUN_SUBSAMPLE_FACTOR, corpora_column_name="filename", seed=cfg.experiment.seed)
 
         log_corpus_distribution(train_dataset, name="train_dataset (after subsampling)")
         log_corpus_distribution(eval_dataset, name="eval_dataset (after subsampling)")
@@ -85,7 +85,7 @@ def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
     return train_dataset, eval_dataset
 
 
-def stratified_subsample_by_corpus(dataset: Dataset, subsample_factor: int, corpora_column_name: str = "filename") -> Dataset:
+def stratified_subsample_by_corpus(dataset: Dataset, subsample_factor: int, corpora_column_name: str = "filename", seed: int = 42) -> Dataset:
     """
     Subsample a HuggingFace Dataset while preserving corpus distribution.
 
@@ -94,6 +94,9 @@ def stratified_subsample_by_corpus(dataset: Dataset, subsample_factor: int, corp
     :param corpora_column_name: Column name holding the corpus identifier (e.g., "filename")
     :return: A new Dataset containing the subsampled rows
     """
+
+    # Use a local RNG instance to avoid global state interference
+    rng = random.Random(seed)
     corpora_column = np.array(dataset[corpora_column_name])
     unique_corpora = np.unique(corpora_column)
 
@@ -109,7 +112,7 @@ def stratified_subsample_by_corpus(dataset: Dataset, subsample_factor: int, corp
         number_of_samples_to_keep_for_corpus = max(1, len(corpus_indices) // subsample_factor)
 
         # Randomly sample indices to keep for given corpus
-        sampled_indices = random.sample(list(corpus_indices), number_of_samples_to_keep_for_corpus)
+        sampled_indices = rng.sample(list(corpus_indices), number_of_samples_to_keep_for_corpus)
 
         # Keep track of these indices
         indices_to_keep.extend(sampled_indices)
