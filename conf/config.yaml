@@ -20,6 +20,7 @@ experiment:
   offline_run: False
   dry_run: True
   wandb_log_locally: False
+  full_determinism: True
 
 data_preprocessing:
   include_punctuation: True
