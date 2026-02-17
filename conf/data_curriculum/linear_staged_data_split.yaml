@@ -1,6 +1,6 @@
   difficulty_scorer_name: "staged_data_split"
   difficulty_scorer_kwargs: {
-#    proportion_mode: "token"
+    proportion_mode: "token"
   }
 
   pacing_fn_name: "linear"
