@@ -6,3 +6,5 @@ transformers
 wandb
 nltk
 accelerate
+matplotlib
+seaborn
