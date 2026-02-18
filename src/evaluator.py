@@ -13,69 +13,13 @@ import torch
 import torch.distributed as dist
 
 from src.helper.setup_environment import TORCH_RUN_ENV_KEYS
+from abc import ABCMeta, abstractmethod
 
 logger = logging.getLogger(__name__)
 
 DUMMY_DATA_DIR = "debug_results"
 
-
-def parse_best_temperature_report_file_results(report_path: Path):
-    """
-    Gets the accuracy values for a given best_temperature_report.txt file
-    """
-    results = {}
-    with report_path.open() as f:
-        lines = [line.strip() for line in f if line.strip()]
-    for line in lines:
-        if line.startswith("###") or line.startswith("TEMPERATURE"):
-            continue
-        elif ":" in line:
-            accuracy_identifier, accuracy_value = line.split(":")
-            accuracy_identifier = accuracy_identifier.strip()
-            accuracy_value = float(accuracy_value.strip())
-            results[accuracy_identifier] = accuracy_value
-        else:
-            # could be average accuracy
-            try:
-                results["average_accuracy"] = float(line)
-            except ValueError:
-                pass
-    return results
-
-def parse_correlations_file_results(corr_path: Path):
-    """
-    Gets the correlation values for a given correlations.txt file
-    """
-    results = {}
-    with corr_path.open() as f:
-        for line in f:
-            if line.strip():
-                accuracy_identifier, accuracy_name = line.split()
-                results[accuracy_identifier] = float(accuracy_name)
-    return results
-
-def gather_results_from_eval_pipeline(eval_output_dir: Path):
-    """
-    Collects all results from the evaluation output directory, stored in best_temperature_report.txt or correlations.txt files
-    """
-    accuracies = {}
-    for task_dir in eval_output_dir.rglob("*"):
-        if not task_dir.is_dir():
-            continue
-        benchmark_name = task_dir.name
-        report_file = task_dir / "best_temperature_report.txt"
-        corr_file = task_dir / "correlations.txt"
-        if report_file.exists():
-            task_results = parse_best_temperature_report_file_results(report_file)
-            for accuracy_identifier, accuracy_value in task_results.items():
-                accuracies[f"{benchmark_name}.{accuracy_identifier}"] = accuracy_value
-        elif corr_file.exists():
-            task_results = parse_correlations_file_results(corr_file)
-            for accuracy_identifier, accuracy_value in task_results.items():
-                accuracies[f"{benchmark_name}.{accuracy_identifier}"] = accuracy_value
-    return accuracies
-
-class ZeroShotEvaluator(object):
+class BaseEvaluator(metaclass=ABCMeta):
     def __init__(
         self,
         out_dir: str,
@@ -88,6 +32,7 @@ class ZeroShotEvaluator(object):
         do_fast_eval: bool = False,
         experiment_name: str = None,
         global_steps: int = None,
+        evaluator_name: str = None,
     ):
         """
         Args:
@@ -109,6 +54,7 @@ class ZeroShotEvaluator(object):
         self.do_fast_eval = do_fast_eval
         self.experiment_name = experiment_name
         self.global_steps = global_steps
+        self.evaluator_name = evaluator_name
 
     def __call__(self) -> Union[Dict[str, Any], None]:
         """
@@ -117,55 +63,66 @@ class ZeroShotEvaluator(object):
         NOTE: If we are using DDP, this function will run on all the processes.
         """
 
-        logger.info("Running BLIMP and AOA evaluation script...")
-        # Start a subprocess to run the lib/evaluation-pipeline/babylm_eval.py script
+        logger.info(f"Running {self.evaluator_name} evaluation script...")
+
+        checkpoint_name = self._determine_checkpoint_name()
+
         # Prepare command to run evaluation script
+        cmd = self._prepare_command(checkpoint_name=checkpoint_name)
 
-        if self.is_best_run:
-            checkpoint_name = "checkpoint_best"
-        else:
-            checkpoint_name = f"checkpoint_{self.global_steps}"
+        # Start a subprocess to run the evaluation pipeline script
+        self._execute_eval_script(cmd=cmd)
 
-        # Make sure to pass an absolute path
-        model_path_absolute = Path(self.out_dir).resolve()
-        # Run fast evaluation in dry run
-        if self.dry_run:
-            cmd = (
-                f"cd eval_pipeline && "
-                f"./eval_zero_shot_fast.sh {model_path_absolute} "
-                f"{checkpoint_name} causal"
-            )
-        else:
-            cmd = (
-                f"cd eval_pipeline && "
-                f"./eval_zero_shot.sh "
-                f"{model_path_absolute} "
-                f"causal "
-            )
-        # If using dummy eval data, don't run script
-        if self.use_dummy_eval_data:
-            logger.info(
-                f"Local debugging: Evaluation script won't run, dummy data will be used for BLIMP / AOA"
-            )
-        else:
-            subprocess.run(cmd, shell=True)
-
-        if self.world_size > 1:
-            dist.barrier() # Synchronize DDP processes
+        self._synchronize_distributed_processes()
 
         logger.info(
-            "BLIMP and AOA Evaluation script finished. Getting accuracies..."
+            f"{self.evaluator_name} Evaluation script finished. Getting accuracies..."
         )
 
         # Iterate through all directories in out_dir/zeroshot
         # and get the accuracies from the eval_results.json files
         accuracies = {}
 
+        eval_output_dir = self._determine_output_dir_of_eval_results(checkpoint_name=checkpoint_name)
+
+        # Get all accuracies from the evaluation results of the script
+        accuracies = self._gather_results_from_eval_pipeline(eval_output_dir)
+
+        self._synchronize_distributed_processes()
+
+        self._move_eval_results_to_designated_folder_and_cleanup_predictions_in_eval_pipeline(eval_output_dir=eval_output_dir, checkpoint_name=checkpoint_name)
+
+        return accuracies
+
+    def _determine_checkpoint_name(self):
+        if self.is_best_run:
+            checkpoint_name = "checkpoint_best"
+        else:
+            checkpoint_name = f"checkpoint_{self.global_steps}"
+        return checkpoint_name
+
+    def _prepare_command(self, checkpoint_name):
+        raise NotImplementedError("Subclass must implement _prepare_command() with the specific script that has to be executed")
+
+    def _execute_eval_script(self, cmd):
+        # If using dummy eval data, don't run script
+        if self.use_dummy_eval_data:
+            logger.info(
+                f"Local debugging: Evaluation script won't run, dummy data will be used for {self.evaluator_name}"
+            )
+        else:
+            subprocess.run(cmd, shell=True)
+
+    def _synchronize_distributed_processes(self):
+        if self.world_size > 1:
+            dist.barrier()  # Synchronize DDP processes
+
+    def _determine_output_dir_of_eval_results(self, checkpoint_name):
         # Use dummy path or real output path depending on debug mode
         if self.use_dummy_eval_data:
-            eval_output_dir = Path(DUMMY_DATA_DIR)
+            eval_output_dir = Path(DUMMY_DATA_DIR) / self.evaluator_name.lower()
             logger.info(
-                f"Local debugging: {DUMMY_DATA_DIR} will be used to get the dummy results for BLIMP / AOA"
+                f"Local debugging: {eval_output_dir} will be used to get the dummy results for {self.evaluator_name}"
             )
         else:
             # Go to result directory
@@ -188,14 +145,65 @@ class ZeroShotEvaluator(object):
                         / "zero_shot"
                         / "causal"
                 )
+        return eval_output_dir
 
-        # Get all accuracies from the evaluation results of the script
-        accuracies = gather_results_from_eval_pipeline(eval_output_dir)
+    def _gather_results_from_eval_pipeline(self, eval_output_dir: Path):
+        """
+        Collects all results from the evaluation output directory, stored in best_temperature_report.txt or correlations.txt files
+        """
+        accuracies = {}
+        for task_dir in eval_output_dir.rglob("*"):
+            if not task_dir.is_dir():
+                continue
+            benchmark_name = task_dir.name
+            report_file = task_dir / "best_temperature_report.txt"
+            corr_file = task_dir / "correlations.txt"
+            if report_file.exists():
+                task_results = self._parse_best_temperature_report_file_results(report_file)
+                for accuracy_identifier, accuracy_value in task_results.items():
+                    accuracies[f"{benchmark_name}.{accuracy_identifier}"] = accuracy_value
+            elif corr_file.exists():
+                task_results = self._parse_correlations_file_results(corr_file)
+                for accuracy_identifier, accuracy_value in task_results.items():
+                    accuracies[f"{benchmark_name}.{accuracy_identifier}"] = accuracy_value
+        return accuracies
 
-        if self.world_size > 1:
-            # Make sure all processes have finished before removing zeroshot directory
-            dist.barrier()
+    def _parse_best_temperature_report_file_results(self, report_path: Path):
+        """
+        Gets the accuracy values for a given best_temperature_report.txt file
+        """
+        results = {}
+        with report_path.open() as f:
+            lines = [line.strip() for line in f if line.strip()]
+        for line in lines:
+            if line.startswith("###") or line.startswith("TEMPERATURE"):
+                continue
+            elif ":" in line:
+                accuracy_identifier, accuracy_value = line.split(":")
+                accuracy_identifier = accuracy_identifier.strip()
+                accuracy_value = float(accuracy_value.strip())
+                results[accuracy_identifier] = accuracy_value
+            else:
+                # could be average accuracy
+                try:
+                    results["average_accuracy"] = float(line)
+                except ValueError:
+                    pass
+        return results
 
+    def _parse_correlations_file_results(self, corr_path: Path):
+        """
+        Gets the correlation values for a given correlations.txt file
+        """
+        results = {}
+        with corr_path.open() as f:
+            for line in f:
+                if line.strip():
+                    accuracy_identifier, accuracy_name = line.split()
+                    results[accuracy_identifier] = float(accuracy_name)
+        return results
+
+    def _move_eval_results_to_designated_folder_and_cleanup_predictions_in_eval_pipeline(self, eval_output_dir, checkpoint_name):
         # Clean up prediction folder within eval pipeline if not in debug mode and ensure this is done for only one process
         if self.process_index == 0:
             if self.use_dummy_eval_data:
@@ -203,11 +211,9 @@ class ZeroShotEvaluator(object):
                     f"Local debugging: No evaluation results files will be removed"
                 )
             else:
-                self.move_eval_results_to_project_root(eval_output_dir, checkpoint_name)
+                self.move_eval_results_to_project_root_results_dir(eval_output_dir, checkpoint_name)
 
-        return accuracies
-
-    def move_eval_results_to_project_root(self, eval_output_dir, checkpoint_name):
+    def move_eval_results_to_project_root_results_dir(self, eval_output_dir, checkpoint_name):
         """
         Move all evaluation results from eval_output_dir into a new
         results/ folder at the project root, preserving the full hierarchy
@@ -221,6 +227,16 @@ class ZeroShotEvaluator(object):
         if not eval_output_dir.exists():
             raise FileNotFoundError(f"Evaluation results directory does not exist: {eval_output_dir}")
 
+        relative_path, project_root = self._determine_relative_path_within_results_dir_and_project_root(eval_output_dir=eval_output_dir)
+
+        new_results_dir = self._determine_new_results_dir(project_root=project_root, relative_path=relative_path, checkpoint_name=checkpoint_name)
+
+        # Move the directory
+        shutil.move(str(eval_output_dir), str(new_results_dir))
+
+        self._remove_empty_results_dirs_in_eval_pipeline(eval_output_dir=eval_output_dir, project_root=project_root)
+
+    def _determine_relative_path_within_results_dir_and_project_root(self, eval_output_dir):
         # Infer project root (parent of eval_pipeline)
         try:
             # Find 'eval_pipeline' in the path
@@ -238,15 +254,17 @@ class ZeroShotEvaluator(object):
             raise ValueError(f"'results' not found in path after 'eval_pipeline': {eval_output_dir}")
 
         relative_path = Path(*eval_output_dir.parts[results_index + 1:])
+        return relative_path, project_root
+
+    def _determine_new_results_dir(self, project_root, relative_path, checkpoint_name):
         new_results_dir = project_root / "results" / relative_path
         if not self.dry_run:
             # Replace main folder when using full BLiMP evaluation (when not doing dry_runs)
             new_results_dir = Path(*(checkpoint_name if p == "main" else p for p in new_results_dir.parts))
         new_results_dir.parent.mkdir(parents=True, exist_ok=True)
+        return new_results_dir
 
-        # Move the directory
-        shutil.move(str(eval_output_dir), str(new_results_dir))
-
+    def _remove_empty_results_dirs_in_eval_pipeline(self, eval_output_dir, project_root):
         # Cleanup: remove empty parent dirs under eval_pipeline/results
         parent = eval_output_dir.parent
         while parent != project_root / "eval_pipeline":
@@ -257,35 +275,30 @@ class ZeroShotEvaluator(object):
             parent = parent.parent
 
 
-class FinetuneEvaluator(object):
-    # Define supported GLUE and MSGS tasks
-    GLUE_TASKS = [
-        "cola",
-        "sst2",
-        "mrpc",
-        "qqp",
-        "mnli",
-        "mnli-mm",
-        "qnli",
-        "rte",
-        "boolq",
-        "multirc",
-        "wsc",
-    ]
 
-    MSGS_TASKS = [
-        "main_verb_control",
-        "control_raising_control",
-        "syntactic_category_control",
-        "lexical_content_the_control",
-        "relative_position_control",
-        "main_verb_lexical_content_the",
-        "main_verb_relative_token_position",
-        "syntactic_category_lexical_content_the",
-        "syntactic_category_relative_position",
-        "control_raising_lexical_content_the",
-        "control_raising_relative_token_position",
-    ]
+class ZeroShotEvaluator(BaseEvaluator):
+
+    def _prepare_command(self, checkpoint_name):
+        # Make sure to pass an absolute path
+        model_path_absolute = Path(self.out_dir).resolve()
+        # Run fast evaluation in dry run
+        if self.dry_run:
+            cmd = (
+                f"cd eval_pipeline && "
+                f"./eval_zero_shot_fast.sh {model_path_absolute} "
+                f"{checkpoint_name} causal"
+            )
+        else:
+            cmd = (
+                f"cd eval_pipeline && "
+                f"./eval_zero_shot.sh "
+                f"{model_path_absolute} "
+                f"causal "
+            )
+        return cmd
+
+
+class SuperGlueEvaluator(object):
 
     def __init__(
         self,
@@ -294,8 +307,6 @@ class FinetuneEvaluator(object):
         process_index: int,
         world_size: int,
         dry_run: bool = False,
-        run_glue: bool = True,
-        run_msgs: bool = False,
         keep_predictions: bool = False,
         use_dummy_eval_data: bool = False,
     ):
@@ -311,38 +322,18 @@ class FinetuneEvaluator(object):
             * keep_predictions (bool): If True, keep the predictions from the finetuning
         """
 
-        # Raise error if both evaluation modes are disabled
-        if not run_glue and not run_msgs:
-            raise ValueError(
-                "run_glue and run_msgs cannot both be False. Must run at least one of GLUE or MSGS tasks"
-            )
-
         # Save constructor parameters
         self.out_dir = out_dir
         self.device = device
         self.process_index = process_index
         self.world_size = world_size
         self.dry_run = dry_run
-        self.run_glue = run_glue
-        self.run_msgs = run_msgs
         self.keep_predictions = keep_predictions
         self.use_dummy_eval_data = use_dummy_eval_data
 
     def run_script(self, task: str):
 
         logger.info(f"Running finetuning script for {task}...")
-
-        # Handle MNLI task special cases
-        if task == "mnli":
-            valid_name = "validation_matched"
-            out_dir = "mnli"
-        elif task == "mnli-mm":
-            valid_name = "validation_mismatched"
-            task = "mnli"
-            out_dir = "mnli-mm"
-        else:
-            valid_name = "validation"
-            out_dir = task
 
         # Ensure output directory exists
         os.makedirs(
@@ -373,6 +364,14 @@ class FinetuneEvaluator(object):
             + f" --overwrite_output_dir"
             + f" --seed 12"
             # + f" --logging_steps 1" NOTE: ENABLE THIS FOR DEBUGGING
+        )
+        cmd = (
+            "./eval_finetune.sh "
+            "<path_to_model> "
+            "<learning_rate (optional, default: 3e-5)> "
+            "<batch_size (optional, default: 32)> "
+            "<max_epochs (optional, default: 10)> "
+            "<seed (optional, default: 42)>"
         )
 
         # print all the key names of the envrioment variables
