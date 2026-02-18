@@ -46,15 +46,14 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
 
         save_strategy="steps",  # Save checkpoints based on steps rather than epochs
 
-        # TODO: Adjust & enable huggingface hub model upload
         hub_strategy="every_save",  # Strategy for pushing to Hugging Face Hub
-        push_to_hub=False,  # Disable pushing model to Hugging Face Hub currently
+        push_to_hub=cfg.experiment.push_to_hub,
 
         # Model ID for pushing to Hugging Face Hub (only set if not offline)
         hub_model_id=(
             None
-            if cfg.experiment.offline_run
-            else f"cambridge-climb/{cfg.experiment.group}-{cfg.model.name}-model"
+            if not cfg.experiment.push_to_hub
+            else f"{os.environ["HF_USER"]}/{cfg.experiment.group}-{cfg.experiment.name}"
         ),
 
         # Token to authenticate pushing to Hub, read from environment (only if not offline)

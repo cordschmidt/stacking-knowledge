@@ -15,13 +15,14 @@ model:
 
 experiment: 
   seed: 42
-  name: 'test_flops_${now:%Y-%m-%d_%H-%M}'
+  name: 'test_huggingface_model_upload_${now:%Y-%m-%d_%H-%M}'
   group: 'Debug_Locally'
   offline_run: False
   dry_run: True
   wandb_log_locally: False
   full_determinism: True
   skip_execution_of_eval_scripts_for_debugging: True
+  push_to_hub: True
 
 data_preprocessing:
   include_punctuation: True
