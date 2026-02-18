@@ -21,6 +21,7 @@ experiment:
   dry_run: True
   wandb_log_locally: False
   full_determinism: True
+  skip_execution_of_eval_scripts_for_debugging: True
 
 data_preprocessing:
   include_punctuation: True

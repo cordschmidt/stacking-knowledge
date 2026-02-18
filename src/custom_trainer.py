@@ -28,7 +28,7 @@ from .data_curriculum.difficulty_scorer import get_difficulty_scorer
 from .data_curriculum.pacing_fn import get_pacing_fn
 from .dataloader import CurriculumDataLoader
 
-from .evaluator import ZeroShotEvaluator, FinetuneEvaluator
+from .evaluator import ZeroShotEvaluator, SuperGlueEvaluator
 from src.helper.dataset_preprocessor import base_collate_fn
 from src.helper.inference import compute_trainer_perplexity, prepare_dataset_for_ppl_inference
 from .gradual_stacking.stacking_callback import GradualStackingCallback
@@ -812,6 +812,7 @@ class CustomTrainer(Trainer):
                 use_dummy_eval_data=self.skip_execution_of_eval_scripts_for_debugging,
                 experiment_name=self.experiment_name,
                 global_steps=self.state.global_step,
+                evaluator_name="BLIMP"
             )
             # Get average of blimp metrics
             blimp_metrics = zeroshot_evaluator()
