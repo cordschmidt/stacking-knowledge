@@ -33,6 +33,7 @@ class BaseEvaluator(metaclass=ABCMeta):
         experiment_name: str = None,
         global_steps: int = None,
         evaluator_name: str = None,
+        task_prefix_to_add: str = None,
     ):
         """
         Args:
@@ -41,7 +42,7 @@ class BaseEvaluator(metaclass=ABCMeta):
             * process_index (int): Index of the current process
             * world_size (int): Number of processes
             * dry_run (bool): If True, don't actually run the evaluation script
-            * is_best_run (bool): If True, keep the predictions from BLIMP
+            * is_best_run (bool): If True, keep the predictions
         """
 
         self.out_dir = out_dir
@@ -55,6 +56,7 @@ class BaseEvaluator(metaclass=ABCMeta):
         self.experiment_name = experiment_name
         self.global_steps = global_steps
         self.evaluator_name = evaluator_name
+        self.task_prefix_to_add = task_prefix_to_add
 
     def __call__(self) -> Union[Dict[str, Any], None]:
         """
@@ -135,7 +137,7 @@ class BaseEvaluator(metaclass=ABCMeta):
                         / "zero_shot"
                         / "causal"
                 )
-            # For full BLiMP evaluation we cannot provide the checkpoint / revision name,
+            # For full evaluation we cannot provide the checkpoint / revision name,
             # instead it will always be saved in the "main" checkpoint / revision
             else:
                 eval_output_dir = (
@@ -156,19 +158,29 @@ class BaseEvaluator(metaclass=ABCMeta):
             if not task_dir.is_dir():
                 continue
             benchmark_name = task_dir.name
+            # Add task prefix ig given
+            if self.task_prefix_to_add is not None:
+                benchmark_name = f"{self.task_prefix_to_add}_{task_dir.name}"
+            else:
+                benchmark_name = task_dir.name
             report_file = task_dir / "best_temperature_report.txt"
+            results_file = task_dir / "results.txt"
             corr_file = task_dir / "correlations.txt"
             if report_file.exists():
-                task_results = self._parse_best_temperature_report_file_results(report_file)
+                task_results = self._parse_best_temperature_report_or_results_file_results(report_file)
                 for accuracy_identifier, accuracy_value in task_results.items():
                     accuracies[f"{benchmark_name}.{accuracy_identifier}"] = accuracy_value
             elif corr_file.exists():
                 task_results = self._parse_correlations_file_results(corr_file)
                 for accuracy_identifier, accuracy_value in task_results.items():
                     accuracies[f"{benchmark_name}.{accuracy_identifier}"] = accuracy_value
+            elif results_file.exists():
+                task_results = self._parse_best_temperature_report_or_results_file_results(results_file)
+                for accuracy_identifier, accuracy_value in task_results.items():
+                    accuracies[f"{benchmark_name}.{accuracy_identifier}"] = accuracy_value
         return accuracies
 
-    def _parse_best_temperature_report_file_results(self, report_path: Path):
+    def _parse_best_temperature_report_or_results_file_results(self, report_path: Path):
         """
         Gets the accuracy values for a given best_temperature_report.txt file
         """
@@ -259,7 +271,7 @@ class BaseEvaluator(metaclass=ABCMeta):
     def _determine_new_results_dir(self, project_root, relative_path, checkpoint_name):
         new_results_dir = project_root / "results" / relative_path
         if not self.dry_run:
-            # Replace main folder when using full BLiMP evaluation (when not doing dry_runs)
+            # Replace main folder when using full evaluation (when not doing dry_runs)
             new_results_dir = Path(*(checkpoint_name if p == "main" else p for p in new_results_dir.parts))
         new_results_dir.parent.mkdir(parents=True, exist_ok=True)
         return new_results_dir
@@ -298,217 +310,46 @@ class ZeroShotEvaluator(BaseEvaluator):
         return cmd
 
 
-class SuperGlueEvaluator(object):
-
-    def __init__(
-        self,
-        out_dir: str,
-        device: torch.device,
-        process_index: int,
-        world_size: int,
-        dry_run: bool = False,
-        keep_predictions: bool = False,
-        use_dummy_eval_data: bool = False,
-    ):
-        """
-        Args:
-            * out_dir (str): Path to the output directory
-            * device (torch.device): Device to run the evaluation on
-            * process_index (int): Index of the current process
-            * world_size (int): Number of processes
-            * dry_run (bool): If True, don't actually run the evaluation script
-            * run_glue (bool): If True, finetune on all GLUE tasks
-            * run_msgs (bool): If True, finetune on all MSGS tasks
-            * keep_predictions (bool): If True, keep the predictions from the finetuning
-        """
-
-        # Save constructor parameters
-        self.out_dir = out_dir
-        self.device = device
-        self.process_index = process_index
-        self.world_size = world_size
-        self.dry_run = dry_run
-        self.keep_predictions = keep_predictions
-        self.use_dummy_eval_data = use_dummy_eval_data
-
-    def run_script(self, task: str):
-
-        logger.info(f"Running finetuning script for {task}...")
-
-        # Ensure output directory exists
-        os.makedirs(
-            os.path.join(self.out_dir, "finetune", out_dir), exist_ok=True
-        )
-
-        task_group = "glue" if task in self.GLUE_TASKS else "msgs"
-
-        # Construct training command
+class SuperGlueEvaluator(BaseEvaluator):
+    def _prepare_command(self, checkpoint_name):
+        model_path_absolute = Path(self.out_dir).resolve()
+        logger.info(f"Model path: {model_path_absolute}")
         cmd = (
-            "cd lib/evaluation-pipeline; ../../env/bin/python finetune_classification.py"
-            + f" --model_name_or_path ../../{self.out_dir}"
-            + f" --output_dir ../../{self.out_dir}/finetune/{out_dir}"
-            + f" --train_file filter-data/{task_group}_filtered/{task}.train.json"
-            + f" --validation_file filter-data/{task_group}_filtered/{task}.{valid_name}.json"
-            + f" --do_train"
-            + f" --do_eval"
-            + f" --do_predict"
-            + f" --use_fast_tokenizer True"  # Set to True to use fast tokenizer
-            + f" --max_seq_length 128"
-            + f" --per_device_train_batch_size 64"
-            + f" --learning_rate 5e-5"
-            + f" --num_train_epochs 10"
-            + f" --evaluation_strategy steps"
-            + f" --patience 10"
-            + f" --eval_every 200"
-            + f" --eval_steps 200"
-            + f" --overwrite_output_dir"
-            + f" --seed 12"
-            # + f" --logging_steps 1" NOTE: ENABLE THIS FOR DEBUGGING
+            f"cd eval_pipeline && "
+            f"./eval_finetuning.sh "
+            f"{model_path_absolute}"
+            # "<learning_rate (optional, default: 3e-5)>"
+            # "<batch_size (optional, default: 32)> "
+            # "<BIG_BSZ> "
+            # "<max_epochs (optional, default: 10)> "
+            # "<WSC_EPOCHS> "
+            # "<seed (optional, default: 42)>"
         )
-        cmd = (
-            "./eval_finetune.sh "
-            "<path_to_model> "
-            "<learning_rate (optional, default: 3e-5)> "
-            "<batch_size (optional, default: 32)> "
-            "<max_epochs (optional, default: 10)> "
-            "<seed (optional, default: 42)>"
-        )
+        return cmd
 
-        # print all the key names of the envrioment variables
-
-        subprocess_env = os.environ.copy()
-        # remove from subprocess_env all torch_run related variables
-        for key in list(subprocess_env.keys()):
-            if key in TORCH_RUN_ENV_KEYS:
-                del subprocess_env[key]
-
-        # If in DDP, set CUDA_VISIBLE_DEVICES to current GPU
-        if self.world_size > 1:
-            # Set CUDA_VISIBLE_DEVICES to the local process index (assuming 4 GPUs per node)
-            subprocess_env["CUDA_VISIBLE_DEVICES"] = str(
-                self.process_index % 4
-            )
-
-        # Disable W&B on subprocess
-        # NOTE: COMMENT OUT FOR DEBUGGING
-        subprocess_env["WANDB_DISABLED"] = "true"
-        subprocess_env["WANDB_MODE"] = "disabled"
-
-
-        logging.info(f"Running command: {cmd}")
-        subprocess.run(cmd, shell=True, env=subprocess_env)
-        logging.info(f"Finished finetuning {task}.")
-
-    def __call__(self) -> Union[Dict[str, Any], None]:
-        """
-        Runs the GLUE evaluation pipeline.
-        """
-
-        # Start a subprocess to run the lib/evaluation-pipeline/babylm_eval.py script
-        logger.info("Running Finetuning evaluation script...")
-
-        # Select tasks depending on mode and dry run
-        tasks = []
-        if self.run_glue:
-            if self.dry_run:
-                tasks.extend(["cola"])
-                logger.info("Running dry run. Only running on CoLA from GLUE.")
-            else:
-                tasks.extend(self.GLUE_TASKS)
-                logger.info(
-                    "Running on all GLUE tasks: " + ", ".join(self.GLUE_TASKS)
-                )
-        if self.run_msgs:
-            if self.dry_run:
-                tasks.extend(["main_verb_control"])
-                logger.info(
-                    "Running dry run. Only running on main_verb_control from MSGS."
-                )
-            else:
-                tasks.extend(self.MSGS_TASKS)
-                logger.info(
-                    "Running on all MSGS tasks: " + ", ".join(self.MSGS_TASKS)
-                )
-
-        # Distribute task execution across processes and only execute script when local debug mode is not activated
-        for task_idx, task in enumerate(tasks):
-            if task_idx % self.world_size != self.process_index:
-                continue
-            if self.use_dummy_eval_data:
-                logger.info(
-                    f"Local debugging: Evaluation script for finetune-task {task} won't run"
-                )
-            else:
-                self.run_script(task)
-
-        # Synchronize DDP processes
-        if self.world_size > 1:
-            dist.barrier()
-
-        logger.info(
-            "Finetuning Evaluation script finished. Getting accuracies..."
-        )
-        accuracies = {}
-
-        # Select dummy data dir for local debugging
+    def _determine_output_dir_of_eval_results(self, checkpoint_name):
+        # Use dummy path or real output path depending on debug mode
         if self.use_dummy_eval_data:
-            eval_data_dir = DUMMY_DATA_PATH
+            eval_output_dir = Path(DUMMY_DATA_DIR) / self.evaluator_name.lower()
             logger.info(
-                f"Local debugging: {DUMMY_DATA_PATH} will be used to get the dummy results for GLUE / MSGS"
+                f"Local debugging: {eval_output_dir} will be used to get the dummy results for {self.evaluator_name}"
             )
         else:
-            eval_data_dir = self.out_dir
-
-
-        # Search for tasks to get accuracies from
-        tasks = os.listdir(os.path.join(eval_data_dir, "finetune"))
-        # Ignore '.DS_Store' files on macOS for local debugging
-        tasks = [task for task in tasks if task != ".DS_Store"]
-
-        # Iterate through all directories in out_dir/zeroshot
-        # and get the accuracies from the eval_results.json files
-        for task in tasks:
-            path = os.path.join(
-                eval_data_dir, "finetune", task, "eval_results.json"
+            # Go to result directory
+            results_dir = Path("eval_pipeline/results")
+            eval_output_dir = (
+                    results_dir
+                    / self.experiment_name
+                    / "main"
+                    / "finetune"
             )
-            with open(path) as f:
-                data = json.load(f)
-                task_group = "glue" if task in self.GLUE_TASKS else "msgs"
-                accuracies[f"{task_group}_" + task + "_accuracy"] = data[
-                    "eval_accuracy"
-                ]
-                if "eval_f1" in data:
-                    accuracies[f"{task_group}_" + task + "_f1"] = data[
-                        "eval_f1"
-                    ]
+        return eval_output_dir
 
-        # Make sure all processes have finished before removing the directory
-        if self.world_size > 1:
-            dist.barrier()
-
-        # Delete the finetune directory within one process if not in debug mode
-        if self.process_index == 0 and not self.keep_predictions:
-            if self.use_dummy_eval_data:
-                logger.info(
-                    f"Local debugging: No evaluation results files will be removed"
-                )
-            else:
-                shutil.rmtree(os.path.join(self.out_dir, "finetune"))
-
-        return accuracies
+    def _determine_new_results_dir(self, project_root, relative_path, checkpoint_name):
+        new_results_dir = project_root / "results" / relative_path
+        # Replace main folder with checkpoint name
+        new_results_dir = Path(*(checkpoint_name if p == "main" else p for p in new_results_dir.parts))
+        new_results_dir.parent.mkdir(parents=True, exist_ok=True)
+        return new_results_dir
 
 
-def collect_results(out_dir: str):
-    """Attempts to run the the collect_results.py script from the evaluation pipeline"""
-
-    cmd = (
-        "cd lib/evaluation-pipeline; ../../env/bin/python collect_results.py"
-        + f" ../../{out_dir}"
-    )
-
-    output = subprocess.run(
-        cmd, shell=True, capture_output=True, env=os.environ.copy()
-    )
-    if output.returncode != 0:
-        logger.warning("Failed to run collect_results.py script. Skipping...")
-    return

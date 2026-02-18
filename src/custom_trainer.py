@@ -200,7 +200,6 @@ class CustomTrainer(Trainer):
         # Evaluation flags from the configuration
         self.eval_blimp = hydra_config.trainer.eval_blimp
         self.eval_glue = hydra_config.trainer.eval_glue
-        self.eval_msgs = hydra_config.trainer.eval_msgs
         self.eval_perplexity = hydra_config.trainer.eval_perplexity
         self.skip_execution_of_eval_scripts_for_debugging = (
             hydra_config.experiment.skip_execution_of_eval_scripts_for_debugging
@@ -794,14 +793,13 @@ class CustomTrainer(Trainer):
             self, metrics: Dict[str, float], metric_key_prefix: str, is_best_run: bool
     ):
         """Evaluate on additional custom tasks and update metrics."""
-        # TODO: Adjust for new eval pipeline
         additional_metrics = {}
 
         inference_model_dir = os.path.join(self.args.output_dir, "lm_model")
 
         # Additional behaviour - evaluate on BLIMP
         if self.eval_blimp:
-            logging.info("Evaluating on BLIMP and AOA...")
+            logging.info("Evaluating on BLIMP...")
             zeroshot_evaluator = ZeroShotEvaluator(
                 self.args.output_dir,
                 device=self.args.device,
@@ -818,9 +816,24 @@ class CustomTrainer(Trainer):
             blimp_metrics = zeroshot_evaluator()
             additional_metrics.update(blimp_metrics)  # type: ignore
 
-        if self.eval_glue or self.eval_msgs:
-            # TODO: add for finetuning tasks?
-            a = 1
+        if self.eval_glue:
+            logging.info("Evaluating on SUPERGLUE...")
+            super_glue_evaluator = SuperGlueEvaluator(
+                self.args.output_dir,
+                device=self.args.device,
+                process_index=self.args.process_index,  # world (global) process index
+                world_size=self.args.world_size,
+                dry_run=self.dry_run,
+                is_best_run=is_best_run,
+                use_dummy_eval_data=self.skip_execution_of_eval_scripts_for_debugging,
+                experiment_name=self.experiment_name,
+                global_steps=self.state.global_step,
+                evaluator_name="SUPER_GLUE",
+                task_prefix_to_add="superglue",
+            )
+            # Get average of blimp metrics
+            super_glue_metrics = super_glue_evaluator()
+            additional_metrics.update(super_glue_metrics)
 
         # Ensure that every metric begins with 'metric_key_prefix'
         for key in list(additional_metrics.keys()):

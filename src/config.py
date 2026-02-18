@@ -82,7 +82,6 @@ class TrainerParams(DictConfig):
     max_training_steps: int
     eval_blimp: bool
     eval_glue: bool
-    eval_msgs: bool
     eval_perplexity: bool
     max_flops: Optional[float] = None
     lr_scheduler_type: str = "linear"
