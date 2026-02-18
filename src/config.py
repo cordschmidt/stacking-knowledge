@@ -38,6 +38,8 @@ class ExperimentParams(DictConfig):
     # we need to specify the run_id of the run we are resuming from
     resume_run_id: Optional[str] = None
 
+    push_to_hub: Optional[bool] = False
+
 
 @dataclass
 class DatasetParams(DictConfig):
