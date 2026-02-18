@@ -31,10 +31,10 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
         eval_strategy="steps",
 
         # Evaluate every N steps (1/4 of total training unless dry run, which uses 1/2)
-        eval_steps=cfg.trainer.max_training_steps // (2 if cfg.experiment.dry_run else 8),
+        eval_steps=cfg.trainer.max_training_steps // (2 if cfg.experiment.dry_run else 16),
 
         # Save checkpoint every N steps (same as eval steps)
-        save_steps=cfg.trainer.max_training_steps // (2 if cfg.experiment.dry_run else 8),
+        save_steps=cfg.trainer.max_training_steps // (2 if cfg.experiment.dry_run else 16),
 
         # Logging frequency, more frequent for dry run
         logging_steps=cfg.trainer.max_training_steps // (100 if cfg.experiment.dry_run else 1000),

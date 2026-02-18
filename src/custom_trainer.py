@@ -68,6 +68,63 @@ class FLOPTrainingLimitCallback(TrainerCallback):
             control.should_training_stop = True
 
 
+class StagedEvaluationCallback(TrainerCallback):
+    def __init__(self, trainer):
+        self.trainer = trainer
+        self._boundaries = set()
+        self._initialized = False
+        self._dry_run = trainer.dry_run
+
+    def on_step_end(self, args, state, control, **kwargs):
+        # Initialize boundaries by reading from other callbacks
+        if not self._initialized:
+            train_loader = kwargs.get("train_dataloader")
+            self._initialize_boundaries(train_loader=train_loader)
+        # Check if next step is a boundary
+        if (state.global_step + 1) in self._boundaries:
+            logger.info(f"Stage boundary will be reached in the next step ({state.global_step + 1}). Performing evaluation...")
+            if self._dry_run:
+                logger.info(f"Evaluation at stage end will be skipped in dry run")
+            else:
+                # Evaluate & save the model
+                self.trainer.evaluate()
+
+    def _initialize_boundaries(self, train_loader):
+
+        self._update_with_gradual_stacking_boundaries()
+        self._update_with_staged_data_curriculum_boundaries(train_loader=train_loader)
+
+        if self._boundaries:
+            self._initialized = True
+            logger.info(f"StagedEvaluationCallback: Unified boundaries detected: {sorted(list(self._boundaries))}")
+        else:
+            raise RuntimeError("StagedEvaluationCallback: No boundaries could be detected, "
+                               "even though StagedEvaluationCallback was created.")
+
+    def _update_with_gradual_stacking_boundaries(self):
+        # Check for Gradual Stacking Callback and get its growth steps
+        for callback in self.trainer.callback_handler.callbacks:
+            # Check by type name to avoid strict import dependencies
+            if "GradualStackingCallback" in str(type(callback)):
+                self._boundaries.update(callback.steps_at_which_model_should_be_grown)
+
+    def _update_with_staged_data_curriculum_boundaries(self, train_loader):
+        # Check for Staged Data Curriculum and calculate steps from percentiles
+        is_staged = (self.trainer.data_curriculum_cfg is not None and
+                     self.trainer.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split")
+        if is_staged:
+            # Retrieve the scorer from the curriculum sampler
+            scorer = train_loader.sampler.difficulty_scorer
+            # Get transition percentiles (which account for token sizes if configured)
+            threshold_percentiles = scorer.transition_thresholds
+
+            # Calculate actual training steps based on the total training budget
+            total_steps = self.trainer.args.max_steps
+            curriculum_steps = [int(p * total_steps) + 1 for p in threshold_percentiles]
+
+            self._boundaries.update(curriculum_steps)
+
+
 class CurriculumLearningCallback(TrainerCallback):
     """
     A TrainerCallback that updates the data sampler and data collator with the current global step of training.
@@ -177,16 +234,18 @@ class CustomTrainer(Trainer):
                                                         align_with_staged_data_curriculum=self.hydra_config.gradual_stacking.align_with_staged_data_curriculum)
             self.add_callback(stacking_callback)
 
+        is_staged_data_curriculum = (
+                self.data_curriculum_cfg is not None and
+                self.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split"
+        )
+
         # Conditional addition of the ContinualPretrainingCallback
         if self.data_curriculum_cfg:
             # Check if 'lr_reset' exists in data curriculum kwargs and if it is True
             scorer_kwargs = self.data_curriculum_cfg.difficulty_scorer_kwargs or {}
             should_lr_reset = hydra_config.continual_pretraining.enable_lr_reset
 
-            # Check if using the staged curriculum and if reset is requested
-            is_staged = self.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split"
-
-            if is_staged and should_lr_reset:
+            if is_staged_data_curriculum and should_lr_reset:
                 logger.info("Continual Pre-training enabled: Adding LearningRateResetCallback")
                 # The callback will handle boundary calculation internally as discussed
                 self.add_callback(LearningRateResetCallback(trainer=self, cfg=hydra_config))
@@ -197,6 +256,13 @@ class CustomTrainer(Trainer):
             self.add_callback(
                 FLOPTrainingLimitCallback(max_flops=self.hydra_config.trainer.max_flops)
             )
+
+        if is_staged_data_curriculum or self.hydra_config.gradual_stacking.enabled:
+            logger.info("Adding StagedEvaluationCallback based on experiment configuration")
+            self.add_callback(StagedEvaluationCallback(trainer=self))
+
+        # Coordination flag to prevent duplicate evaluations at the same step
+        self._last_eval_step_stacking_and_data_curriculum = -1
 
         # Add the general similarity callback (runs for all models at the end)
         self.add_callback(FinalLayerSimilarityCallback())
