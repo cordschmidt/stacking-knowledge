@@ -36,12 +36,13 @@ def load_dataset_model_and_tokenizer(cfg: BabyLMConfig):
     logger.info("Initializing model")
     model = load_base_model(cfg)
 
+
+    print_model_stats(model=model)
+
     # Check tokenizer & vocab size validity
     assert (
             tokenizer.vocab_size == model.config.vocab_size
     ), "Tokenizer and model vocab size mismatch"
-
-    print_model_stats(model=model)
 
     return model, tokenizer, dataset
 
@@ -148,8 +149,11 @@ def print_model_stats(model, name="Model"):
     # Calculate embedding parameters based on the Llama model structure
     num_embed_params = sum(p.numel() for p in model.model.embed_tokens.parameters())
     num_non_embed_params = total_params - num_embed_params
+    num_head_params = sum(p.numel() for p in model.lm_head.parameters())
+    num_non_vocab_params = total_params - num_embed_params - num_head_params
 
     logger.info(f"\n{name} size:")
     logger.info(f"  Number of layers: {num_layers}")
     logger.info(f"  Total parameters: {total_params:,}")
     logger.info(f"  Non-embedding parameters: {num_non_embed_params:,}\n")
+    logger.info(f"  Non-vocabulary parameters: {num_non_vocab_params:,}\n")

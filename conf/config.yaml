@@ -1,17 +1,17 @@
 defaults: 
   - base_config
   - _self_
-  - model: llama_10M
+  - model: llama_100M
   - tokenizer: llama_bpe_8192
   - data_curriculum: linear_staged_data_split
 
 dataset: 
   name: 'stacking-babylm-2025/babylm2025_text_data'
-  subconfig: 'original_strict_small_gold'
+  subconfig: 'original_strict_gold' # original_strict_small_gold or original_strict_gold
 
 model:
   model_kwargs:
-    vocab_size: 8192
+    vocab_size: 8192 # 2048 or 8192 -> 2^11 or 2^13 | 128* or 128*78=9984
 
 experiment: 
   seed: 42
@@ -42,7 +42,7 @@ trainer:
   max_flops: 20_727_201_792_000
 
 gradual_stacking:
-  enabled: True
+  enabled: False
   k_number_of_stages: 6
   alpha: 0.0
   layer_per_block: 1
