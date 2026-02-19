@@ -135,7 +135,7 @@ def adjust_parameters_in_config_for_special_setups(cfg: BabyLMConfig):
     if cfg.experiment.dry_run:
         adjust_params_for_dry_run(cfg=cfg)
 
-    if cfg.data_curriculum.pacing_fn_name == "prop_alpha":
+    if cfg.data_curriculum and cfg.data_curriculum.pacing_fn_name == "prop_alpha":
         insert_gradual_stacking_parameters_into_pacing_fn(cfg=cfg)
 
     insert_data_replay_parameters_into_staged_data_split_scorer(cfg=cfg)
