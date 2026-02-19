@@ -401,6 +401,7 @@ class CustomTrainer(Trainer):
             start_time (`Optional[float]`):
                 The start of training.
         """
+        logs["model_total_parameters"] = sum(p.numel() for p in self.model.parameters())
         logs["train_cumulative_flops"] = self.state.total_flos
         if self.state.epoch is not None:
             logs["epoch"] = self.state.epoch
