@@ -54,7 +54,7 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
         hub_model_id=(
             None
             if not cfg.experiment.push_to_hub
-            else f"{os.environ["HF_USER"]}/{cfg.experiment.group}-{cfg.experiment.name}"
+            else f"stacking-babylm-2025/{cfg.experiment.group}-{cfg.experiment.name}"
         ),
 
         # Token to authenticate pushing to Hub, read from environment (only if not offline)
