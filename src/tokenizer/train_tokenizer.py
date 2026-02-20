@@ -67,10 +67,16 @@ def save_tokenizer_as_llama_tokenizer(bpe_tokenizer_json_path, llama_tokenizer_s
     print(f"LLaMA tokenizer saved to {llama_tokenizer_save_path}")
 
 def upload_tokenizer_to_hf(llama_tokenizer_save_path):
+    repo_id = f"stacking-babylm-2025/{llama_tokenizer_save_path}"
     api = HfApi(token=os.getenv("HF_WRITE_TOKEN"))
+    api.create_repo(
+        repo_id=repo_id,
+        repo_type="model",
+        exist_ok=True  # If it exists, it just continues
+    )
     api.upload_folder(
         folder_path=llama_tokenizer_save_path,
-        repo_id=f"stacking-babylm-2025/{llama_tokenizer_save_path}",
+        repo_id=repo_id,
         repo_type="model",
     )
 
