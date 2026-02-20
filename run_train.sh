@@ -12,8 +12,8 @@
 #SBATCH --error=./slurm_files/slurm-%x-%j.err                   # where to write slurm error
 
 # Enforce offline mode for datasets and transformers for compute nodes
-export HF_DATASETS_OFFLINE=1
-export TRANSFORMERS_OFFLINE=1
+#export HF_DATASETS_OFFLINE=1
+#export TRANSFORMERS_OFFLINE=1
 
 # Load virtual environment
 source ~/miniconda3/bin/activate
