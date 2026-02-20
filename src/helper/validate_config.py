@@ -131,6 +131,8 @@ def validate_gradual_stacking_params(cfg: BabyLMConfig):
             )
 
 def adjust_parameters_in_config_for_special_setups(cfg: BabyLMConfig):
+    adjust_lr_scheduler_kwargs(cfg=cfg)
+
     # Adjust training parameters in dry run for faster testing & debugging
     if cfg.experiment.dry_run:
         adjust_params_for_dry_run(cfg=cfg)
@@ -144,6 +146,18 @@ def adjust_parameters_in_config_for_special_setups(cfg: BabyLMConfig):
             cfg.data_curriculum.difficulty_scorer_name == "staged_data_split" and \
             cfg.data_curriculum.pacing_fn_name == "prop_alpha":
         force_ignoring_dataset_sizes_in_staged_data_curriculum(cfg=cfg)
+
+def adjust_lr_scheduler_kwargs(cfg: BabyLMConfig):
+    if cfg.trainer.lr_scheduler_type == "cosine_with_min_lr":
+        # Initialize the dictionary if it is currently None
+        if cfg.trainer.lr_scheduler_kwargs is None:
+            cfg.trainer.lr_scheduler_kwargs = {}
+        # Check if min_lr is already set explicitly
+        if "min_lr" not in cfg.trainer.lr_scheduler_kwargs:
+            # Calculate 10% of the learning rate
+            min_lr = 0.1 * cfg.trainer.lr
+            cfg.trainer.lr_scheduler_kwargs["min_lr"] = min_lr
+            logger.info(f"Auto-set 'min_lr' for 'cosine_with_min_lr' to {min_lr} (10% of lr: {cfg.trainer.lr}).")
 
 def adjust_params_for_dry_run(cfg: BabyLMConfig):
     logger.info(
