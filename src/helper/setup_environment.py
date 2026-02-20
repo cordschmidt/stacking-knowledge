@@ -56,6 +56,8 @@ def log_cuda_info():
     else:
         logger.warning("CUDA not available — running on CPU")
 
+    cpu_workers = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1))
+    logger.info(f"Number of cpu_workers: {cpu_workers}")
     logger.info("=================================")
 
 def set_seed(cfg: BabyLMConfig, seed: int) -> None:
