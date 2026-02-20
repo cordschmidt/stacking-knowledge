@@ -12,7 +12,7 @@ from src.tokenizer import load_tokenizer
 from src.models import load_base_model
 from src.helper.dataset_preprocessor import DatasetPreprocessor
 
-DRY_RUN_SUBSAMPLE_FACTOR = 1000 // (10 if torch.cuda.device_count() > 1 else 1)
+DRY_RUN_SUBSAMPLE_FACTOR = 500 // (10 if torch.cuda.device_count() > 1 else 1)
 
 # Logger for this file
 logger = logging.getLogger(__name__)
