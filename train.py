@@ -31,18 +31,13 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args)
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
 
     # After training completes, set flags to enable evaluation on all the benchmark tasks / metrics
-    # TODO: Make all available again
     trainer.eval_glue = True
-    # trainer.eval_msgs = True
     trainer.eval_blimp = True
     trainer.eval_perplexity = True
 
     # Evaluate the best model found during training
     # Since 'load_best_model_at_end=True' is set in TrainingArguments, the best checkpoint is already loaded before this evaluation.
     trainer.evaluate(metric_key_prefix="eval_best")
-
-    # TODO: Collect and aggregate evaluation results from the output directory, this needs to be adjusted when BabyLM 2025 eval pipeline is incorporated
-    # collect_results(os.path.join(trainer.args.output_dir, "lm_model"))
 
     # Save the best model checkpoint explicitly to a "best_model" subdirectory
     trainer.save_model(output_dir=os.path.join(training_args.output_dir, "best_model"))
