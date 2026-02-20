@@ -154,10 +154,12 @@ def adjust_lr_scheduler_kwargs(cfg: BabyLMConfig):
             cfg.trainer.lr_scheduler_kwargs = {}
         # Check if min_lr is already set explicitly
         if "min_lr" not in cfg.trainer.lr_scheduler_kwargs:
+            new_kwargs = dict(cfg.trainer.lr_scheduler_kwargs)
             # Calculate 10% of the learning rate
             min_lr = 0.1 * cfg.trainer.lr
-            cfg.trainer.lr_scheduler_kwargs["min_lr"] = min_lr
-            logger.info(f"Auto-set 'min_lr' for 'cosine_with_min_lr' to {min_lr} (10% of lr: {cfg.trainer.lr}).")
+            new_kwargs["min_lr"] = min_lr
+            cfg.trainer.lr_scheduler_kwargs = new_kwargs
+            logger.info(f"Auto-set 'min_lr' for 'cosine_with_min_lr' to {cfg.trainer.lr_scheduler_kwargs["min_lr"]} (10% of lr: {cfg.trainer.lr}).")
 
 def adjust_params_for_dry_run(cfg: BabyLMConfig):
     logger.info(
