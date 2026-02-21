@@ -44,7 +44,6 @@ def compute_trainer_perplexity(
 
     Assumes that `labels` are provided in the batch (typically equal to input_ids)
     """
-    # TODO: Check if it actually works correctly replaced this method completely
     input_ids = batch["input_ids"].to(trainer.args.device)
     attention_mask = batch.get("attention_mask", None)
     if attention_mask is not None:
@@ -57,7 +56,7 @@ def compute_trainer_perplexity(
             attention_mask=attention_mask,
             labels=labels,
         )
-        loss = outputs.loss  # average cross-entropy loss over tokens
+        loss = outputs.loss
 
     # Convert average loss to perplexity: PPL = exp(loss)
     perplexity = torch.exp(loss).item()

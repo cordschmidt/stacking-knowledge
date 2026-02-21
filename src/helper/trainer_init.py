@@ -57,6 +57,8 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
             else f"stacking-babylm-2025/{cfg.experiment.group}-{cfg.experiment.name}"
         ),
 
+        save_total_limit=1, # Prevent disk quota outage
+
         # Token to authenticate pushing to Hub, read from environment (only if not offline)
         hub_token=(
             None

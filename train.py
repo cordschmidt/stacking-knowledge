@@ -7,6 +7,7 @@ from hydra.core.config_store import ConfigStore
 # Local imports
 from src.config import BabyLMConfig
 from src.custom_trainer import CustomTrainer
+from src.helper.cleanup import cleanup_output_dir
 from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer, preprocess_data
 from src.helper.setup_environment import setup_environment
 from src.helper.trainer_init import create_trainer
@@ -39,8 +40,10 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args)
     # Since 'load_best_model_at_end=True' is set in TrainingArguments, the best checkpoint is already loaded before this evaluation.
     trainer.evaluate(metric_key_prefix="eval_best")
 
+    cleanup_output_dir(output_dir=cfg.experiment.output_dir)
+
     # Save the best model checkpoint explicitly to a "best_model" subdirectory
-    trainer.save_model(output_dir=os.path.join(training_args.output_dir, "best_model"))
+    # trainer.save_model(output_dir=os.path.join(training_args.output_dir, "best_model"))
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
