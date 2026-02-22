@@ -672,53 +672,38 @@ class CustomTrainer(Trainer):
 
         # Simulate perplexity calculation during debugging
         if self.skip_execution_of_eval_scripts_for_debugging:
-            ppl_mean, ppl_std = self._simulate_perplexity_metrics()
+            ppl_mean = self._simulate_perplexity_metrics()
         # Calculate perplexity on eval subset
         else:
-            ppl_mean, ppl_std = self._compute_perplexity_from_dataset()
+            ppl_mean = self._compute_perplexity_from_dataset()
 
         # Add perplexity values to the metrics result dict
         metrics[f"{metric_key_prefix}_perplexity_mean"] = ppl_mean
-        metrics[f"{metric_key_prefix}_perplexity_std"] = ppl_std
         return metrics
 
-    def _simulate_perplexity_metrics(self) -> Tuple[float, float]:
+    def _simulate_perplexity_metrics(self) -> float:
         """Generate simulated perplexity metrics for debugging purposes."""
         ppl_mean = random.uniform(10.0, 50.0)
-        ppl_std = random.uniform(1.0, 5.0)
-        return ppl_mean, ppl_std
+        return ppl_mean
 
-    def _compute_perplexity_from_dataset(self) -> Tuple[float, float]:
+    def _compute_perplexity_from_dataset(self) -> float:
         """Compute mean and std of perplexity from evaluation dataset."""
-
-        # TODO: What subset? Why only subset?
         eval_subset = self._get_eval_subset()
         logging.info("Evaluating perplexity...")
         logging.info(f" ** Number of samples: {eval_subset.num_rows}")
 
-        perplexities = self._run_perplexity_inference(eval_subset)
-        tensor_perplexities = torch.tensor(perplexities, device=self.args.device)
-
-        ppl_mean = torch.mean(tensor_perplexities)
-        ppl_std = torch.std(tensor_perplexities)
+        total_nll, total_tokens = self._run_perplexity_inference(eval_subset)
 
         # When the training is run in a distributed environment
         if self.is_distributed:
-            self._gather_distributed_metrics(ppl_mean, ppl_std)
+            total_nll, total_tokens = self._gather_distributed_metrics(total_nll, total_tokens)
 
-        # if main process
-        # TODO: How is this relating to the main process? No check is done?
-        # TODO: Why should it be calculated again? Has this something to do with the main process thing?
-        #  But isn't this also done on non-main processes as we're not checking for that?
-        ppl_mean = torch.mean(torch.tensor(perplexities)).item()
-        ppl_std = torch.std(torch.tensor(perplexities)).item()
+        ppl_mean = math.exp(total_nll / total_tokens) if total_tokens > 0 else 0.0
 
-        return ppl_mean, ppl_std
+        return ppl_mean
 
-    def _run_perplexity_inference(self, eval_subset) -> List[float]:
+    def _run_perplexity_inference(self, eval_subset) -> Tuple[float, int]:
         """Run inference to compute perplexity scores for each batch."""
-
-        # TODO: What is done during eval prep here?
         eval_subset = prepare_dataset_for_ppl_inference(self, eval_subset)
 
         dataloader = DataLoader(
@@ -729,24 +714,33 @@ class CustomTrainer(Trainer):
             pin_memory=True,
         )
 
-        perplexities = []
-        with torch.no_grad():
-            for batch in tqdm(dataloader):
-                # TODO: What is compute_trainer_perplexity?
-                batch_ppl = compute_trainer_perplexity(batch, self.processing_class, self)
-                perplexities.extend(batch_ppl)
-        return perplexities
+        total_nll = 0.0
+        total_tokens = 0
+        self.model.eval()
 
-    def _gather_distributed_metrics(self, mean_tensor: torch.Tensor, std_tensor: torch.Tensor) -> None:
-        """Aggregate metrics across distributed processes."""
-        # TODO: This method I don't get at all, nothing is changed, so how is it supposed to work at all???
+        for batch in tqdm(dataloader, desc="Evaluating Perplexity"):
+            batch_nll, batch_tokens = compute_trainer_perplexity(
+                batch, self.processing_class, self
+            )
+            total_nll += batch_nll
+            total_tokens += batch_tokens
+
+        return total_nll, total_tokens
+
+    def _gather_distributed_metrics(self, total_nll, total_tokens):
+        # Wait for all GPUs to finish their loops
         dist.barrier()
 
-        gathered_mean = [torch.zeros_like(mean_tensor) for _ in range(self.args.world_size)]
-        gathered_std = [torch.zeros_like(std_tensor) for _ in range(self.args.world_size)]
+        # Sum everything together
+        stats = torch.tensor([total_nll, float(total_tokens)], device=self.args.device)
+        dist.all_reduce(stats, op=dist.ReduceOp.SUM)
 
-        dist.all_gather(gathered_mean, mean_tensor)
-        dist.all_gather(gathered_std, std_tensor)
+        total_nll, total_tokens = stats[0].item(), int(stats[1].item())
+
+        # Final sync to ensure everyone has the reduced numbers before moving on
+        dist.barrier()
+
+        return total_nll, total_tokens
 
     def _get_eval_subset(self):
         """
@@ -755,7 +749,6 @@ class CustomTrainer(Trainer):
         Returns:
             Subset of the evaluation dataset
         """
-        # TODO: Check, this was just copy pasted for now
         eval_subset = self.eval_dataset.select(  # type: ignore
             range(
                 self.args.process_index,  # local process rank

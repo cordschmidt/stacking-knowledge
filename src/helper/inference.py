@@ -40,15 +40,17 @@ def compute_trainer_perplexity(
     trainer: CustomTrainer,
 ) -> List[float]:
     """
-    Computes perplexity for causal language models (e.g., BabyLLaMA).
-
-    Assumes that `labels` are provided in the batch (typically equal to input_ids)
+    Computes total negative log-likelihood and valid token count for a batch,
+    following the Hugging Face recommendation for accurate PPL aggregation (see https://huggingface.co/docs/transformers/perplexity)
     """
     input_ids = batch["input_ids"].to(trainer.args.device)
     attention_mask = batch.get("attention_mask", None)
     if attention_mask is not None:
         attention_mask = attention_mask.to(trainer.args.device)
-    labels = batch.get("labels", input_ids).to(trainer.args.device)
+
+    # Mask padding tokens with -100 so they are ignored by the loss function.
+    labels = input_ids.clone()
+    labels[labels == tokenizer.pad_token_id] = -100
 
     with torch.no_grad():
         outputs = trainer.model(
@@ -56,9 +58,13 @@ def compute_trainer_perplexity(
             attention_mask=attention_mask,
             labels=labels,
         )
-        loss = outputs.loss
+        # loss is the average NLL per non-masked token in the batch
+        neg_log_likelihood = outputs.loss
 
-    # Convert average loss to perplexity: PPL = exp(loss)
-    perplexity = torch.exp(loss).item()
+    # Count valid tokens (those not masked by -100)
+    num_valid_tokens = (labels != -100).sum().item()
 
-    return [perplexity] * input_ids.size(0)  # one score per sample in the batch
+    # Total NLL for this batch = (Average NLL) * (Number of valid tokens)
+    total_batch_nll = neg_log_likelihood.item() * num_valid_tokens
+
+    return total_batch_nll, num_valid_tokens
