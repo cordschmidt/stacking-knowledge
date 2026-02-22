@@ -14,7 +14,7 @@ def cleanup_output_dir(output_dir):
         "generation_config.json",
         "model.safetensors",
         "special_tokens_map.json",
-        "tokenizer.json"
+        "tokenizer.json",
         "tokenizer_config.json",
         "training_args.bin",
     ]
