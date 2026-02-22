@@ -40,7 +40,7 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args)
     # Since 'load_best_model_at_end=True' is set in TrainingArguments, the best checkpoint is already loaded before this evaluation.
     trainer.evaluate(metric_key_prefix="eval_best")
 
-    cleanup_output_dir(output_dir=cfg.experiment.output_dir)
+    cleanup_output_dir(output_dir=training_args.output_dir)
 
     # Save the best model checkpoint explicitly to a "best_model" subdirectory
     # trainer.save_model(output_dir=os.path.join(training_args.output_dir, "best_model"))
