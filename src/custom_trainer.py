@@ -44,10 +44,11 @@ class FinalLayerSimilarityCallback(TrainerCallback):
     """
     def on_train_end(self, args, state, control, model=None, **kwargs):
         if model is not None:
+            results_dir = args.output_dir.replace("checkpoints/", "results/")
             # Save in the root output directory (results/run_name/)
             calculate_and_save_layer_similarity_plot(
                 model,
-                output_dir=os.path.join(args.output_dir, f"checkpoint-{state.global_step}"),
+                output_dir=os.path.join(results_dir, f"checkpoint-{state.global_step}"),
                 stage_name=None,
                 step=state.global_step
             )

@@ -269,7 +269,8 @@ class BaseEvaluator(metaclass=ABCMeta):
         return relative_path, project_root
 
     def _determine_new_results_dir(self, project_root, relative_path, checkpoint_name):
-        new_results_dir = project_root / "results" / relative_path
+        new_output_dir = os.path.dirname(self.out_dir).replace("checkpoints", "results")
+        new_results_dir = project_root / new_output_dir / relative_path
         if not self.dry_run:
             # Replace main folder when using full evaluation (when not doing dry_runs)
             new_results_dir = Path(*(checkpoint_name if p == "main" else p for p in new_results_dir.parts))
@@ -346,7 +347,8 @@ class SuperGlueEvaluator(BaseEvaluator):
         return eval_output_dir
 
     def _determine_new_results_dir(self, project_root, relative_path, checkpoint_name):
-        new_results_dir = project_root / "results" / relative_path
+        new_output_dir = os.path.dirname(self.out_dir).replace("checkpoints", "results")
+        new_results_dir = project_root / new_output_dir / relative_path
         # Replace main folder with checkpoint name
         new_results_dir = Path(*(checkpoint_name if p == "main" else p for p in new_results_dir.parts))
         new_results_dir.parent.mkdir(parents=True, exist_ok=True)
