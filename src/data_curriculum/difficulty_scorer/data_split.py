@@ -122,8 +122,6 @@ class DataSplitSorter(BaseDifficultyScorer):
                 # Only score items corresponding to the requested subset of indices
                 if _idx == indices[curr_indices_idx]:
                     # Look up the difficulty score based on the sample's filename
-                    # TODO: Isn't this then an INT value? Then the difficulty-threshold might be affecting most of the samples?
-                    # TODO: Check interaction here with pacing_fn.py, I think this and the config are determining the max_difficulty_percentile
                     difficulty = self.filename_map[item["filename"]]  # type: ignore
                     self._difficulty_scores.append(difficulty)
 

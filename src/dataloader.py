@@ -40,8 +40,6 @@ class CurriculumDataLoader(DataLoader):
         self.global_stepnum = global_stepnum
         self.ignore_columns = ignore_columns
 
-        # TODO: I don't get that. Why is this done? What is meant by multi-process? Why is it not possible?
-        #  Does this mean no multi-GPU support is available?
         if num_workers != 0:
             # NOTE: Multi-process dataloading is not implemented for this custom iterator.
             # The default Trainer typically uses 0 workers and is already performant.
@@ -76,7 +74,6 @@ class _CustomSingleProcessDataLoaderIter(_BaseDataLoaderIter):
         self.loader = loader
 
         # Torch DataPipes are currently not supported by this implementation
-        # TODO: What are those?
         if isinstance(self._dataset, (IterDataPipe, MapDataPipe)):
             raise NotImplementedError(
                 "IterDataPipe and MapDataPipe are not supported yet"

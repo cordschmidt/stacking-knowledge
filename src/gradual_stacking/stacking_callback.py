@@ -75,10 +75,10 @@ class GradualStackingCallback(TrainerCallback):
                 f"Number of layers ({len(model.model.layers)}) is not divisible by block size ({self.block_size}). "
                 "This should not happen and might be caused by a bug inside the code"
             )
-
+        results_dir = args.output_dir.replace("checkpoints/", "results/")
         calculate_and_save_layer_similarity_plot(
             model,
-            output_dir=os.path.join(args.output_dir, f"checkpoint-{state.global_step}"),
+            output_dir=os.path.join(results_dir, f"checkpoint-{state.global_step}"),
             stage_name=f"end_of_stage_{self.scheduler.get_current_stage(state.global_step)}",
             step=state.global_step
         )

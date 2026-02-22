@@ -248,7 +248,6 @@ class SelfPerplexityScorer(PerplexityBaseClass):
         else:
             self.ngram_model = NGramPerplexityScorer(n_gram)
 
-        # TODO: I don't get the update thing, check!!!
         self.update = update
         self._trainer = None
         self._tokenizer = None
