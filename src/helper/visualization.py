@@ -28,9 +28,9 @@ def calculate_and_save_layer_similarity_plot(model, output_dir, step: int, stage
         logger.error(f"Failed to calculate layer similarity at step {step}: {e}")
 
 def extract_weights_for_each_llama_layer(model, save_path_svg):
-    # Extract & save layers
+    # Extract layers
     layers = model.model.layers if hasattr(model, "model") else model.layers
-    torch.save(layers, save_path_svg.replace(".svg", ".pt"))
+    # torch.save(layers, save_path_svg.replace(".svg", ".pt"))
     # We target the 'gate_proj' as the 'first feedforward layer'
     layer_weights = []
 
