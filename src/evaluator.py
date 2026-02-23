@@ -312,6 +312,19 @@ class ZeroShotEvaluator(BaseEvaluator):
 
 
 class SuperGlueEvaluator(BaseEvaluator):
+
+    def __call__(self) -> Union[Dict[str, Any], None]:
+        # Run the standard evaluation pipeline completely
+        accuracies = super().__call__()
+
+        # Synchronize processes one last time to ensure all processes have finished
+        self._synchronize_distributed_processes()
+
+        # Clean up the evaluation models directory
+        self._delete_eval_models_directory()
+
+        return accuracies
+
     def _prepare_command(self, checkpoint_name):
         model_path_absolute = Path(self.out_dir).resolve()
         logger.info(f"Model path: {model_path_absolute}")
@@ -353,5 +366,19 @@ class SuperGlueEvaluator(BaseEvaluator):
         new_results_dir = Path(*(checkpoint_name if p == "main" else p for p in new_results_dir.parts))
         new_results_dir.parent.mkdir(parents=True, exist_ok=True)
         return new_results_dir
+
+    def _delete_eval_models_directory(self):
+        """Deletes the eval_pipeline/models/<experiment_name> directory after evaluation"""
+
+        # Only delete on main process and if we're not using dummy data
+        if self.process_index == 0 and not self.use_dummy_eval_data:
+            models_dir = Path("eval_pipeline/models") / self.experiment_name
+            if models_dir.exists() and models_dir.is_dir():
+                logger.info(f"Cleaning up model directory in eval_pipeline: {models_dir}")
+                try:
+                    shutil.rmtree(models_dir)
+                    logger.info(f"Successfully deleted {models_dir}")
+                except Exception as e:
+                    logger.error(f"Failed to delete {models_dir}: {e}")
 
 
