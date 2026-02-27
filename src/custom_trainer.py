@@ -9,7 +9,7 @@ import os
 import math
 import torch.distributed as dist
 
-from typing import Union, List, Dict, Tuple, Optional
+from typing import Union, List, Dict, Tuple, Optional, Any
 from transformers import Trainer, TrainerCallback, PreTrainedTokenizerFast
 from transformers.trainer_callback import TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
@@ -719,37 +719,69 @@ class CustomTrainer(Trainer):
         if not self.eval_perplexity:
             return metrics
 
+        eval_subset = self._get_eval_subset()
+
         # Simulate perplexity calculation during debugging
         if self.skip_execution_of_eval_scripts_for_debugging:
-            ppl_mean = self._simulate_perplexity_metrics()
+            ppl_metrics = self._simulate_perplexity_metrics(eval_subset=eval_subset)
         # Calculate perplexity on eval subset
         else:
-            ppl_mean = self._compute_perplexity_from_dataset()
+            ppl_metrics = self._compute_perplexity_from_dataset(eval_subset=eval_subset)
 
-        # Add perplexity values to the metrics result dict
-        metrics[f"{metric_key_prefix}_perplexity_mean"] = ppl_mean
+        for key, value in ppl_metrics.items():
+            metrics[f"{metric_key_prefix}_{key}"] = value
         return metrics
 
-    def _simulate_perplexity_metrics(self) -> float:
-        """Generate simulated perplexity metrics for debugging purposes."""
-        ppl_mean = random.uniform(10.0, 50.0)
-        return ppl_mean
+    def _simulate_perplexity_metrics(self, eval_subset) -> Dict[str, float]:
+        """Generate simulated perplexity metrics globally and per-corpus for debugging."""
+        metrics = {"perplexity_mean": random.uniform(10.0, 50.0)}
 
-    def _compute_perplexity_from_dataset(self) -> float:
+        # Dynamically simulate for all corpora present in the dataset
+        if "filename" in eval_subset.column_names:
+            for corpus in set(eval_subset["filename"]):
+                clean_name = str(corpus).split("/")[-1].rsplit(".", 1)[0]
+                metrics[f"perplexity_{clean_name}"] = random.uniform(10.0, 50.0)
+
+        return metrics
+
+    def _compute_perplexity_from_dataset(self, eval_subset) -> dict[str, float | Any]:
         """Compute mean and std of perplexity from evaluation dataset."""
-        eval_subset = self._get_eval_subset()
-        logging.info("Evaluating perplexity...")
-        logging.info(f" ** Number of samples: {eval_subset.num_rows}")
+        logging.info(f"Evaluating perplexity on {eval_subset.num_rows} samples...")
+
+        ppl_metrics = {}
+        total_nll, total_tokens = 0.0, 0
+
+        ppl_metrics = {}
+        total_nll, total_tokens = 0.0, 0
+
+        # Calculate per-corpus perplexity and accumulate for the overall mean
+        if "filename" in eval_subset.column_names:
+            for corpus in set(eval_subset["filename"]):
+                corpus_subset = eval_subset.filter(lambda x: x["filename"] == corpus)
+                if corpus_subset.num_rows == 0:
+                    continue
+
+                logging.info(f"Evaluating perplexity on {corpus}, {corpus_subset.num_rows} samples...")
+
+                nll, tokens = self._run_perplexity_inference(corpus_subset)
+                if self.is_distributed:
+                    nll, tokens = self._gather_distributed_metrics(nll, tokens)
+
+                # Accumulate for global average
+                total_nll += nll
+                total_tokens += tokens
+
+                # Record individual corpus perplexity
+                ppl = math.exp(nll / tokens) if tokens > 0 else 0.0
+                clean_name = str(corpus).split("/")[-1].rsplit(".", 1)[0]
+                ppl_metrics[f"perplexity_{clean_name}"] = ppl
 
         total_nll, total_tokens = self._run_perplexity_inference(eval_subset)
 
-        # When the training is run in a distributed environment
-        if self.is_distributed:
-            total_nll, total_tokens = self._gather_distributed_metrics(total_nll, total_tokens)
+        # Compute the weighted global mean perplexity from the accumulated totals
+        ppl_metrics["perplexity_mean"] = math.exp(total_nll / total_tokens) if total_tokens > 0 else 0.0
 
-        ppl_mean = math.exp(total_nll / total_tokens) if total_tokens > 0 else 0.0
-
-        return ppl_mean
+        return ppl_metrics
 
     def _run_perplexity_inference(self, eval_subset) -> Tuple[float, int]:
         """Run inference to compute perplexity scores for each batch."""
