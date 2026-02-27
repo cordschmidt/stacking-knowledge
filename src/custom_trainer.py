@@ -605,20 +605,8 @@ class CustomTrainer(Trainer):
             decoded_text = self.processing_class.decode(
                 inputs["input_ids"][i],
                 skip_special_tokens=True,
-                clean_up_tokenization_spaces=True
+                clean_up_tokenization_spaces=True,
             )
-
-            # Remove artifacts
-            decoded_text = decoded_text.replace("Ġ", " ")
-            decoded_text = decoded_text.replace("ĉ", "\n")
-            decoded_text = decoded_text.replace("Ċ", "\n")
-            decoded_text = decoded_text.replace(" ", " ")
-            decoded_text = decoded_text.replace("âĢĻ", "'")  # Apostrophes
-            decoded_text = decoded_text.replace("âĢĵ", "-")  # Dashes
-            decoded_text = decoded_text.replace("âĢľ", '"')  # Left double quote
-            decoded_text = decoded_text.replace("âĢĿ", '"')  # Right double quote
-            decoded_text = decoded_text.replace("âĢĶ", "...")  # Ellipsis
-            decoded_text = re.sub(r' +', ' ', decoded_text).strip()
 
             decoded_samples += f"{i + 1}: " + decoded_text + "\n\n"
         return decoded_samples

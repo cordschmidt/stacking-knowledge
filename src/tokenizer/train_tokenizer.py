@@ -2,7 +2,7 @@ import os
 import hydra
 import logging
 
-from tokenizers import Tokenizer, trainers, pre_tokenizers, models
+from tokenizers import Tokenizer, trainers, pre_tokenizers, models, decoders
 from datasets import DatasetDict, load_dataset
 from transformers import LlamaTokenizerFast
 from hydra.core.config_store import ConfigStore
@@ -38,6 +38,8 @@ def train_bpe_tokenizer(dataset, vocab_size, bpe_tokenizer_json_path):
 
     # Set pre-tokenizer (byte-level like GPT/LLaMA)
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
+
+    tokenizer.decoder = decoders.ByteLevel()
 
     # Define trainer with special tokens
     special_tokens = ["<s>", "</s>", "<unk>", "<pad>"]
@@ -88,9 +90,10 @@ def main(cfg: BabyLMConfig):
     vocab_size = cfg.model.model_kwargs.vocab_size
     bpe_tokenizer_json_path = f"tokenizer_{vocab_size}.json"
     train_bpe_tokenizer(dataset, vocab_size, bpe_tokenizer_json_path)
-    llama_tokenizer_save_path = f"llama_tokenizer_{vocab_size}"
+    llama_tokenizer_save_path = f"llama_tokenizer_small_{vocab_size}"
     save_tokenizer_as_llama_tokenizer(bpe_tokenizer_json_path, llama_tokenizer_save_path)
     upload_tokenizer_to_hf(llama_tokenizer_save_path)
+
 
 if __name__ == "__main__":
     main()
