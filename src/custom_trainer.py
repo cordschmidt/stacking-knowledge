@@ -83,7 +83,7 @@ class StagedEvaluationCallback(TrainerCallback):
             self._initialize_boundaries(train_loader=train_loader)
         # Check if next step is a boundary
         if (state.global_step + 1) in self._boundaries:
-            logger.info(f"Stage boundary will be reached in the next step ({state.global_step + 1}). Performing evaluation...")
+            logger.info(f"Stage boundary will be reached in the next step ({state.global_step}). Performing evaluation...")
             if self._dry_run:
                 logger.info(f"Evaluation at stage end will be skipped in dry run")
             else:
@@ -116,12 +116,25 @@ class StagedEvaluationCallback(TrainerCallback):
         if is_staged:
             # Retrieve the scorer from the curriculum sampler
             scorer = train_loader.sampler.difficulty_scorer
-            # Get transition percentiles (which account for token sizes if configured)
+            pacing_fn = train_loader.sampler.pacing_fn
             threshold_percentiles = scorer.transition_thresholds
-
-            # Calculate actual training steps based on the total training budget
             total_steps = self.trainer.args.max_steps
-            curriculum_steps = [int(p * total_steps) + 1 for p in threshold_percentiles]
+
+            curriculum_steps = []
+            for p in threshold_percentiles:
+                low = 0
+                high = total_steps
+                boundary_step = high
+
+                while low <= high:
+                    mid = (low + high) // 2
+                    if pacing_fn(mid) >= p:
+                        boundary_step = mid
+                        high = mid - 1
+                    else:
+                        low = mid + 1
+
+                curriculum_steps.append(boundary_step)
 
             self._boundaries.update(curriculum_steps)
 

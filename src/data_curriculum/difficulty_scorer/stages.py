@@ -1,21 +1,11 @@
-# Move the dataset mapping here so it can be accessed without loading the whole package
-CUSTOM_STAGED_ORDER = {
-    "childes.train": 1,
-    "bnc_spoken.train": 2,
-    "switchboard.train": 3,
-    "open_subtitles.train": 4,
-    "simple_wiki.train": 5,
-    "gutenberg.train": 6,
-}
-
-# Number of tokens for each corpus on the train set
+# Number of tokens for each corpus on the train set fpr the 3k tokenizer
 DATASET_TOKEN_COUNTS = {
-    "childes.train": 6_164_224,
-    "bnc_spoken.train": 1_331_200,
-    "switchboard.train": 254_848,
-    "open_subtitles.train": 3_448_576,
-    "simple_wiki.train": 2_435_584,
-    "gutenberg.train": 3_713_536,
+    "childes.train": 6_518_528,
+    "bnc_spoken.train": 1_482_112,
+    "switchboard.train": 272_000,
+    "open_subtitles.train": 3_816_192,
+    "simple_wiki.train": 2_936_320,
+    "gutenberg.train": 4_277_760,
 }
 
 
@@ -26,26 +16,18 @@ SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023 = {
     "bnc_spoken.train": 2,
     "switchboard.train": 2,
     "open_subtitles.train": 3,
-    "qed.train": 3,
-    "cbt.train": 4,
-    "children_stories.train": 4,
-    "simple_wiki.train": 5,
-    "wikipedia.train": 6,
-    "gutenberg.train": 6,
+    "simple_wiki.train": 4,
+    "gutenberg.train": 5,
 }
 
 # Difficulty order for grammatical-first curriculum
 GRAMMATICAL_FIRST_DATASET_ORDER_BABYLM_2023 = {
-    "cbt.train": 1,
-    "children_stories.train": 1,
+    "gutenberg.train": 1,
     "simple_wiki.train": 2,
-    "wikipedia.train": 3,
-    "gutenberg.train": 3,
-    "open_subtitles.train": 4,
-    "bnc_spoken.train": 5,
-    "switchboard.train": 5,
-    "qed.train": 6,
-    "childes.train": 6,
+    "open_subtitles.train": 3,
+    "bnc_spoken.train": 4,
+    "switchboard.train": 4,
+    "childes.train": 5,
 }
 
-NUM_STAGES = max(CUSTOM_STAGED_ORDER.values())
+NUM_STAGES = max(SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023.values())

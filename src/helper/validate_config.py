@@ -142,10 +142,10 @@ def adjust_parameters_in_config_for_special_setups(cfg: BabyLMConfig):
 
     insert_data_replay_parameters_into_staged_data_split_scorer(cfg=cfg)
 
-    if cfg.data_curriculum and \
-            cfg.data_curriculum.difficulty_scorer_name == "staged_data_split" and \
-            cfg.data_curriculum.pacing_fn_name == "prop_alpha":
-        force_ignoring_dataset_sizes_in_staged_data_curriculum(cfg=cfg)
+    # if cfg.data_curriculum and \
+    #         cfg.data_curriculum.difficulty_scorer_name == "staged_data_split" and \
+    #         cfg.data_curriculum.pacing_fn_name == "prop_alpha":
+    #     force_ignoring_dataset_sizes_in_staged_data_curriculum(cfg=cfg)
 
 def adjust_lr_scheduler_kwargs(cfg: BabyLMConfig):
     if cfg.trainer.lr_scheduler_type == "cosine_with_min_lr":
@@ -203,11 +203,11 @@ def insert_data_replay_parameters_into_staged_data_split_scorer(cfg: BabyLMConfi
 def force_ignoring_dataset_sizes_in_staged_data_curriculum(cfg: BabyLMConfig):
     # Check proportion flag
     scorer_kwargs = cfg.data_curriculum.difficulty_scorer_kwargs or {}
-    if scorer_kwargs.get("account_for_dataset_proportions") is not False:
-        logger.info(f"In cfg.data_curriculum.difficulty_scorer_kwargs the attribute 'account_for_dataset_proportions' was set to True")
-        logger.info(f"In order to align the data curriculum with the prop-alpha stages, 'account_for_dataset_proportions' has to be set to False")
-        cfg.data_curriculum.difficulty_scorer_kwargs["account_for_dataset_proportions"] = False
-        logger.info(f"'account_for_dataset_proportions' was set to {cfg.data_curriculum.difficulty_scorer_kwargs["account_for_dataset_proportions"]}")
+    if scorer_kwargs.get("proportion_mode") is not None:
+        logger.info(f"In cfg.data_curriculum.difficulty_scorer_kwargs the attribute 'proportion_mode' was set to {scorer_kwargs.get("proportion_mode")}")
+        logger.info(f"In order to align the data curriculum with the prop-alpha stages, 'proportion_mode' has to be disabled")
+        cfg.data_curriculum.difficulty_scorer_kwargs["proportion_mode"] = None
+        logger.info(f"'proportion_mode' was set to {cfg.data_curriculum.difficulty_scorer_kwargs["proportion_mode"]}")
 
 def consider_step_adjustment_for_compute_equivalent_model_training(cfg: BabyLMConfig, model):
     if cfg.gradual_stacking.enabled and cfg.gradual_stacking.number_non_embedding_params_compute_equivalent_model is not None:

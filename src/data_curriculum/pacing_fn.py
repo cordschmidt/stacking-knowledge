@@ -3,10 +3,12 @@ Module for establishing a pacing function for data-driven curriculum learning.
 Used by the CurriculumSampler class to determine the upper limit of the sampling difficulty.
 """
 
+import numpy as np
 from typing import Callable, Any
 
-from src.gradual_stacking.scheduler import PropAlphaScheduler
+from scipy.interpolate import PchipInterpolator
 
+from src.gradual_stacking.scheduler import PropAlphaScheduler
 
 def get_pacing_fn(
     pacing_fn_name: str,
@@ -108,7 +110,6 @@ def get_pacing_fn(
 
     # === EXPONENTIAL pacing === (very slow start, aggressive increase near end)
     elif pacing_fn_name == "exp":
-        import numpy as np
 
         c = 10  # Controls the sharpness of the curve
         tilde_b = starting_difficulty
@@ -129,7 +130,6 @@ def get_pacing_fn(
 
     # === LOGARITHMIC pacing === (aggressive early increase, flattens toward end)
     elif pacing_fn_name == "log":
-        import numpy as np
 
         c = 10
         tilde_b = starting_difficulty
@@ -151,27 +151,48 @@ def get_pacing_fn(
 
     # === PROP-ALPHA (Synchronized) pacing === (Synchronized to Gradual Stacking Steps)
     elif pacing_fn_name == "prop_alpha":
+
+        rate = max_difficulty - starting_difficulty
+
         # Extract scheduler-specific arguments
         k_number_of_stages = kwargs.get("k_number_of_stages")
         alpha = kwargs.get("alpha")
 
-        # Initialize a local scheduler with the same parameters as the StackingCallback
         sync_scheduler = PropAlphaScheduler(
             total_training_steps=total_steps,
             k_number_of_stages=k_number_of_stages,
             alpha=alpha
         )
 
-        def _prop_alpha_function(step: int) -> float:
-            # Get the 0-indexed stage from the scheduler
-            current_stage_idx = sync_scheduler.get_current_stage(step)
+        # Get the exact step boundaries from the scheduler
+        growing_steps = sync_scheduler.get_growing_steps()
+        # Append total number of training steps to the end
+        step_boundaries = growing_steps + [total_steps]
+        # Map step boundaries to 0-1
+        normalized_step_boundaries = np.array(step_boundaries) / total_steps
+        normalized_step_boundaries = np.insert(normalized_step_boundaries, 0, 0.0)
 
-            # Convert to a percentile that maps to the correct stage in the Sorter.
-            # We return the midpoint of the stage's percentile range to be robust.
-            # Example: If k=6, Stage 0 returns (0 + 0.5)/6 = 0.083
-            return (current_stage_idx + 0.5) / k_number_of_stages
+        # Define the difficult values to map the stage proportions to
+        difficult_values_to_map_to = np.linspace(0.0, 1.0, k_number_of_stages + 1)
 
-        return _prop_alpha_function
+        smooth_interpolator = PchipInterpolator(normalized_step_boundaries, difficult_values_to_map_to)
+
+        def _prop_alpha_continuous_function(step: int) -> float:
+            if step < step_start:
+                return starting_difficulty
+
+            if step >= step_end:
+                return max_difficulty
+
+            # Calculate the normalized step progress (0.0 to 1.0)
+            progress = (step - step_start) / num_steps
+
+            # Do piecewise linear interpolation for each stage
+            prop_alpha_mapped_difficulty = float(smooth_interpolator(progress))
+
+            return float(starting_difficulty + rate * prop_alpha_mapped_difficulty)
+
+        return _prop_alpha_continuous_function
 
     else:
         # Default fallback: use max difficulty from start (no pacing)
