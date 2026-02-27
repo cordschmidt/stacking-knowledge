@@ -52,6 +52,11 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         # List which holds the percentiles at which a new stage begins
         self.transition_thresholds = []
 
+    @property
+    def current_stage(self) -> int:
+        """Returns the current active stage (1 to NUM_STAGES)"""
+        return self._last_active_level if self._last_active_level is not None else 1
+
 
     def score_difficulty(
             self,

@@ -1,5 +1,7 @@
 import copy
 import logging
+import re
+
 import torch
 import time
 import random
@@ -538,15 +540,26 @@ class CustomTrainer(Trainer):
                         max_difficulty_score,
                         min_difficulty_score,
                         median_difficulty_score,
+                        current_stage,
                     ) = self._compute_data_curriculum_difficulty_metrics_for_logging()
                 else:
                     # Default metrics if no data curriculum is done
                     data_difficulty_percentile = 1.0
                     data_sampled_percentile = 1.0
-                    num_samples = len(self.callback_handler.train_dataloader.sampler) * self.args.world_size  # type: ignore
-                    max_difficulty_score = 0.0
-                    min_difficulty_score = 0.0
-                    median_difficulty_score = 0.0
+                    num_samples = len(self.callback_handler.train_dataloader.sampler) * self.args.world_size
+                    max_difficulty_score, min_difficulty_score, median_difficulty_score = 0.0, 0.0, 0.0
+                    current_stage = 1.0
+
+                # Log additionally as standard metrics
+                self.log({
+                    "curriculum/data_difficulty_percentile": data_difficulty_percentile,
+                    "curriculum/data_sampled_percentile": data_sampled_percentile,
+                    "curriculum/num_samples": num_samples,
+                    "curriculum/max_difficulty_score": max_difficulty_score,
+                    "curriculum/min_difficulty_score": min_difficulty_score,
+                    "curriculum/median_difficulty_score": median_difficulty_score,
+                    "curriculum/current_stage": current_stage,
+                })
 
                 # Add collected curriculum learning data into the tracking table
                 self.curriculum_learning_table.add_data(
@@ -558,6 +571,7 @@ class CustomTrainer(Trainer):
                     min_difficulty_score,
                     median_difficulty_score,
                     data_samples,
+                    current_stage,
                 )
 
                 # If at evaluation step, log the curriculum learning table
@@ -588,9 +602,25 @@ class CustomTrainer(Trainer):
         """Decode the first few input_ids from the current batch."""
         decoded_samples = ""
         for i in range(min(num_samples, len(inputs["input_ids"]))):
-            decoded_samples += (
-                    f"{i + 1}: " + self.processing_class.decode(inputs["input_ids"][i]) + "\n\n"
+            decoded_text = self.processing_class.decode(
+                inputs["input_ids"][i],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True
             )
+
+            # Remove artifacts
+            decoded_text = decoded_text.replace("Ġ", " ")
+            decoded_text = decoded_text.replace("ĉ", "\n")
+            decoded_text = decoded_text.replace("Ċ", "\n")
+            decoded_text = decoded_text.replace(" ", " ")
+            decoded_text = decoded_text.replace("âĢĻ", "'")  # Apostrophes
+            decoded_text = decoded_text.replace("âĢĵ", "-")  # Dashes
+            decoded_text = decoded_text.replace("âĢľ", '"')  # Left double quote
+            decoded_text = decoded_text.replace("âĢĿ", '"')  # Right double quote
+            decoded_text = decoded_text.replace("âĢĶ", "...")  # Ellipsis
+            decoded_text = re.sub(r' +', ' ', decoded_text).strip()
+
+            decoded_samples += f"{i + 1}: " + decoded_text + "\n\n"
         return decoded_samples
 
     def _compute_data_curriculum_difficulty_metrics_for_logging(self):
@@ -598,17 +628,19 @@ class CustomTrainer(Trainer):
         Compute dynamic difficulty metrics during data curriculum learning for logging
         """
         # Get pacing function and difficulty scorer
+        sampler = self.callback_handler.train_dataloader.sampler
         pacing_fn = self.callback_handler.train_dataloader.sampler.pacing_fn
         difficulty_scorer = self.callback_handler.train_dataloader.sampler.difficulty_scorer
 
+        current_sampler_step = getattr(sampler, 'global_stepnum', self.state.global_step)
+
         # Percentile of current pacing
         # Calculates the currently aimed for difficulty percentile based on the current global step
-        data_difficulty_percentile = pacing_fn(self.state.global_step)
+        data_difficulty_percentile = pacing_fn(current_sampler_step)
 
         # Filtered difficulty scores for current batch
-        # TODO: What are those? Is this affecting the order of the data curriculum or is it just for logging?
         difficulty_scores = torch.tensor(
-            difficulty_scorer.filtered_difficulty_scores  # type: ignore
+            difficulty_scorer.filtered_difficulty_scores
         )
         # Just keep non-zero scores for further calculations
         difficulty_scores = difficulty_scores[difficulty_scores != 0]
@@ -622,6 +654,8 @@ class CustomTrainer(Trainer):
         min_score = difficulty_scores.min().item()
         median_score = difficulty_scores.median().item()
 
+        current_stage = getattr(difficulty_scorer, "current_stage", 1.0)
+
         return (
             data_difficulty_percentile,
             data_sampled_percentile,
@@ -629,6 +663,7 @@ class CustomTrainer(Trainer):
             max_score,
             min_score,
             median_score,
+            current_stage
         )
 
     def _check_if_curriculum_table_should_be_logged(self):
