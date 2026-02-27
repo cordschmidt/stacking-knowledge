@@ -22,7 +22,7 @@ from .base_difficulty_scorer import BaseDifficultyScorer
 from .registry import register_difficulty_scorer
 
 # Import dataset / stage info
-from .stages import CUSTOM_STAGED_ORDER, NUM_STAGES, DATASET_TOKEN_COUNTS
+from .stages import SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023, NUM_STAGES, DATASET_TOKEN_COUNTS
 
 data_cl_logger = logging.getLogger("Data Curriculum")
 cp_logger = logging.getLogger("Continual Pretraining")
@@ -36,7 +36,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
     def __init__(self, proportion_mode: str = None, data_replay_mode: str = None, data_replay_fraction: float = 0.0, data_replay_decay: float = 1.0, **kwargs: Any):
         super().__init__(**kwargs)
         # Use custom order
-        self.filename_to_difficulty_map = CUSTOM_STAGED_ORDER
+        self.filename_to_difficulty_map = SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023
         self.proportion_mode = proportion_mode  # Expects None, sample or token
 
         # Parameters for data replay

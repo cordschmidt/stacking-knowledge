@@ -48,10 +48,23 @@ class GradualStackingCallback(TrainerCallback):
 
         # Access difficulty scorer
         staged_difficulty_scorer = train_dataloader.sampler.difficulty_scorer
+        pacing_fn = train_dataloader.sampler.pacing_fn
         threshold_percentiles = staged_difficulty_scorer.transition_thresholds
 
-        # Map boundaries percentiles back to steps (integers)
-        step_boundaries = [int(specific_percentile * self.total_training_steps) + 1 for specific_percentile in threshold_percentiles]
+        step_boundaries = []
+        for specific_percentile in threshold_percentiles:
+            low = 0
+            high = self.total_training_steps
+            boundary_step = high
+
+            while low <= high:
+                mid = (low + high) // 2
+                if pacing_fn(mid) >= specific_percentile:
+                    boundary_step = mid
+                    high = mid - 1
+                else:
+                    low = mid + 1
+            step_boundaries.append(boundary_step)
         logger.info(f"Old step boundaries: {self.steps_at_which_model_should_be_grown}")
         self.steps_at_which_model_should_be_grown = step_boundaries
         logger.info(f"New step boundaries after alignment: {self.steps_at_which_model_should_be_grown}")
@@ -84,7 +97,7 @@ class GradualStackingCallback(TrainerCallback):
         )
 
         # Log model stats before growth
-        logger.info(f"Growing model at step {state.global_step}")
+        logger.info(f"Growing model before step {state.global_step}")
         total_params_before_growth = sum(p.numel() for p in model.parameters())
         logger.info(f"No. of layers before growth: {len(model.model.layers)}, total params before growth: {total_params_before_growth}")
 

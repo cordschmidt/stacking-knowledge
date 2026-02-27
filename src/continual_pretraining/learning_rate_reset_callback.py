@@ -35,7 +35,7 @@ class LearningRateResetCallback(TrainerCallback):
         #   Step 500 -> index 0
         #   Step 1500 -> index 1
         #   Step 3500 -> index 2
-        current_stage = bisect.bisect_left(self.step_boundaries , current_global_step)
+        current_stage = bisect.bisect_right(self.step_boundaries , current_global_step)
 
         # Check if we have entered a new stage
         if current_stage != self.last_active_stage:
@@ -55,10 +55,30 @@ class LearningRateResetCallback(TrainerCallback):
 
         # Access difficulty scorer
         staged_difficulty_scorer = train_dataloader.sampler.difficulty_scorer
+        pacing_fn = train_dataloader.sampler.pacing_fn
         threshold_percentiles = staged_difficulty_scorer.transition_thresholds
 
-        # Map boundaries percentiles back to steps (integers)
-        step_boundaries = [int(specific_percentile * self.total_training_budget) for specific_percentile in threshold_percentiles]
+        step_boundaries = []
+
+        for specific_percentile in threshold_percentiles:
+            # Use binary search to find the first step where the pacing function
+            # reaches or exceeds the threshold percentile
+            low = 0
+            high = self.total_training_budget
+            boundary_step = high
+
+            while low <= high:
+                mid = (low + high) // 2
+                pacing_value_of_mid = pacing_fn(mid)
+                if pacing_value_of_mid >= specific_percentile:
+                    boundary_step = mid
+                    high = mid - 1
+                else:
+                    low = mid + 1
+
+            step_boundaries.append(boundary_step)
+
+        logger.info(f"Step boundaries: {step_boundaries}")
 
         self.step_boundaries = step_boundaries
 

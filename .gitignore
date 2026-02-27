@@ -202,3 +202,4 @@ src/tokenizer/tokenizer_8192.json
 /results
 /wandb
 /slurm_files
+/outputs_config
