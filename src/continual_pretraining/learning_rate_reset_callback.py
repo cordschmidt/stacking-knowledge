@@ -17,6 +17,7 @@ class LearningRateResetCallback(TrainerCallback):
         self.rewarm_fraction = cfg.continual_pretraining.rewarm_fraction
         self.total_training_budget = self.cfg.trainer.max_training_steps
         self.max_rewarm_lr = cfg.continual_pretraining.max_rewarm_lr
+        self.base_max_lr = cfg.trainer.lr
 
         self._is_initialized = False
         self.stage_durations = []
@@ -126,8 +127,19 @@ class LearningRateResetCallback(TrainerCallback):
     def _set_max_learning_rate_for_current_stage(self, current_stage: int):
         # Use max_rewarm_lr for stages > 0 if provided
         if current_stage > 0 and self.max_rewarm_lr is not None:
+            total_stages = len(self.stage_durations)
+
+            if total_stages > 1:
+                # Calculate how far along the stages we are (from 0.0 to 1.0)
+                progress_fraction = current_stage / (total_stages - 1)
+                # Linearly interpolate between base LR and the target rewarm LR
+                max_lr = self.base_max_lr + (self.max_rewarm_lr - self.base_max_lr) * progress_fraction
+            else:
+                # If we only have 2 stages just set the new max_lr to max_rewarm_lr
+                max_lr = self.max_rewarm_lr
+
             logger.info(f"Max Learning Rate: {self.max_rewarm_lr} for stage {current_stage + 1}")
-            max_lr = self.max_rewarm_lr
+
             # Set the initial learning rate for every parameter
             for param_group in self.trainer.optimizer.param_groups:
                 param_group['initial_lr'] = max_lr
