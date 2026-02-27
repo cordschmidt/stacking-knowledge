@@ -684,6 +684,14 @@ class CustomTrainer(Trainer):
         # Flag to indicate whether this is a "best" run, i.e. final evaluation of best model
         is_best_run = "best" in metric_key_prefix
 
+        # Ensure curriculum learning table is pushed to wandb
+        if self.curriculum_learning_table is not None:
+            _curriculum_learning_table = Table(
+                columns=self.curriculum_learning_table.columns,
+                data=self.curriculum_learning_table.data,
+            )
+            self.log({"curriculum_learning_table": _curriculum_learning_table})
+
         metrics = {}
         metrics = self.evaluate_on_perplexity(metrics, metric_key_prefix)
         self._save_and_sync_model()
