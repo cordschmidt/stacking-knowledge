@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Sequence
 
+import numpy as np
 # typing imports
 from datasets import Dataset
 
@@ -67,6 +68,15 @@ class DataSplitSorter(BaseDifficultyScorer):
             else GRAMMATICAL_FIRST_DATASET_ORDER_BABYLM_2023
         )
 
+    @property
+    def current_stage(self) -> float:
+
+        if not hasattr(self, "_current_max_difficulty_percentile"):
+            return 1.0
+
+        current_stage = float(np.percentile(self._difficulty_scores, self._current_max_difficulty_percentile * 100))
+        return current_stage
+
     def score_difficulty(
         self,
         dataset: Dataset,
@@ -95,6 +105,8 @@ class DataSplitSorter(BaseDifficultyScorer):
                 The difficulty scores that are above the max_difficulty_percentile should be set
                 to 0.
         """
+
+        self._current_max_difficulty_percentile = max_difficulty_percentile
 
         # Compute difficulty scores only at the start of training
         # because the data order does not change dynamically

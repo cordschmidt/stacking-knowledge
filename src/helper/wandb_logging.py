@@ -69,6 +69,7 @@ def init_wandb_and_curriculum_table(cfg: BabyLMConfig, wandb_user: str):
         "min_difficulty_score",
         "median_difficulty_score",
         "data_samples",
+        "current_stage",
     ]
 
     if cfg.experiment.resume_run_id:
