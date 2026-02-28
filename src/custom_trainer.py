@@ -84,7 +84,7 @@ class StagedEvaluationCallback(TrainerCallback):
             train_loader = kwargs.get("train_dataloader")
             self._initialize_boundaries(train_loader=train_loader)
         # Check if next step is a boundary
-        if (state.global_step + 1) in self._boundaries:
+        if (state.global_step) in self._boundaries:
             logger.info(f"Stage boundary will be reached in the next step ({state.global_step}). Performing evaluation...")
             if self._dry_run:
                 logger.info(f"Evaluation at stage end will be skipped in dry run")
@@ -747,9 +747,6 @@ class CustomTrainer(Trainer):
         ppl_metrics = {}
         total_nll, total_tokens = 0.0, 0
 
-        ppl_metrics = {}
-        total_nll, total_tokens = 0.0, 0
-
         # Calculate per-corpus perplexity and accumulate for the overall mean
         if "filename" in eval_subset.column_names:
             for corpus in set(eval_subset["filename"]):
@@ -771,8 +768,10 @@ class CustomTrainer(Trainer):
                 ppl = math.exp(nll / tokens) if tokens > 0 else 0.0
                 clean_name = str(corpus).split("/")[-1].rsplit(".", 1)[0]
                 ppl_metrics[f"perplexity_{clean_name}"] = ppl
-
-        total_nll, total_tokens = self._run_perplexity_inference(eval_subset)
+        else:
+            total_nll, total_tokens = self._run_perplexity_inference(eval_subset)
+            if self.is_distributed:
+                total_nll, total_tokens = self._gather_distributed_metrics(total_nll, total_tokens)
 
         # Compute the weighted global mean perplexity from the accumulated totals
         ppl_metrics["perplexity_mean"] = math.exp(total_nll / total_tokens) if total_tokens > 0 else 0.0
