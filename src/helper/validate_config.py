@@ -110,10 +110,10 @@ def validate_data_replay_fraction_is_valid(cfg):
         )
 
 def validate_data_replay_decay(cfg):
-    data_replay_fraction = cfg.continual_pretraining.data_replay_decay
-    if data_replay_fraction <= 0.0 or data_replay_fraction > 1.0:
+    data_replay_decay = cfg.continual_pretraining.data_replay_decay
+    if data_replay_decay <= 0.0 or data_replay_decay > 1.0:
         raise ValueError(
-            f"Configuration Error: 'data_replay_fraction' has to be > 0.0 and <= 1.0, but got {data_replay_fraction} instead"
+            f"Configuration Error: 'data_replay_decay' has to be > 0.0 and <= 1.0, but got {data_replay_decay} instead"
         )
 
 def validate_gradual_stacking_params(cfg: BabyLMConfig):
