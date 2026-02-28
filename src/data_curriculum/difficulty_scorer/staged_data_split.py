@@ -190,9 +190,6 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         else:
             # Strict staging: samples in current stage = 1.0, others = 0.0
             mask = (self._difficulty_scores_tensor == active_difficulty_level).float()
-        # Strict staging, filter for all samples with the active_difficulty_level of the current stage, where
-        # samples belonging to the current stage take the value 1.0 and those that are not take the value 0.0
-        mask = (self._difficulty_scores_tensor == active_difficulty_level).float()
         # Convert mask tensor to list
         self.filtered_difficulty_scores = mask.tolist()
         # Set _last_active_level to the current difficulty level
