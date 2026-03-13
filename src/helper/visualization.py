@@ -7,42 +7,61 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def calculate_and_save_layer_similarity_plot(model, output_dir, step: int, stage_name: str = None):
+def create_layer_and_block_similarity_plots(model, output_dir, step: int, stage_name: str = None, block_size: int = 1):
     """
-    Calculates cosine similarity between layer weights and saves the matrix as svg and png files
+    Calculates cosine similarity between layer weights (and additionally block weights if block_size > 1)
+    and saves the matrices as svg and png files
     """
-    try:
-        save_path_svg = prepare_save_path(output_dir=output_dir, stage_name=stage_name, step=step)
+    # Create plots for layer similarity
+    calculate_and_save_similarity_plot(model = model, output_dir = output_dir, step = step, stage_name = stage_name, block_size = block_size, similarity_objective = "layer")
 
-        layer_weights = extract_weights_for_each_llama_layer(model=model, save_path_svg=save_path_svg)
+    # If block_size > 1, group the layer weights and plot additionally block-level similarity
+    if block_size > 1:
+        calculate_and_save_similarity_plot(model = model, output_dir = output_dir, step = step, stage_name = stage_name, block_size = block_size, similarity_objective = "block")
 
-        similarity_matrix = calculate_similarity_matrix(layer_weights=layer_weights)
+def calculate_and_save_similarity_plot(model, output_dir, step: int, stage_name: str = None, block_size: int = 1, similarity_objective: str = "layer"):
+    """
+    Calculates cosine similarity between layer weights (and additionally block weights if block_size > 1)
+    and saves the matrices as svg and png files
+    """
+    weights = extract_weights_for_each_llama_layer(model=model)
+    if similarity_objective == "block":
+        weights = group_weights_into_blocks(weights, block_size)
 
-        save_path_svg = prepare_save_path(output_dir=output_dir, stage_name=stage_name, step=step)
-        
-        create_and_save_similarity_plot(similarity_matrix=similarity_matrix, save_path_svg=save_path_svg, stage_name=stage_name, step=step)
+    similarity_matrix = calculate_similarity_matrix(layer_weights=weights)
 
-        logger.info(f"Saved layer similarity matrix to {save_path_svg}")
+    layer_save_path = prepare_save_path(output_dir, stage_name, step, unit_name=similarity_objective)
+    create_and_save_similarity_plot(
+        similarity_matrix=similarity_matrix,
+        save_path_svg=layer_save_path,
+        stage_name=stage_name,
+        step=step,
+        unit_name=similarity_objective
+    )
+    logger.info(f"Saved {similarity_objective} similarity matrix to {layer_save_path}")
 
-    except Exception as e:
-        logger.error(f"Failed to calculate layer similarity at step {step}: {e}")
-
-def extract_weights_for_each_llama_layer(model, save_path_svg):
-    # Extract layers
+def extract_weights_for_each_llama_layer(model):
+    # Extract layers safely
     layers = model.model.layers if hasattr(model, "model") else model.layers
-    # torch.save(layers, save_path_svg.replace(".svg", ".pt"))
-    # We target the 'gate_proj' as the 'first feedforward layer'
-    layer_weights = []
 
+    layer_weights = []
     for layer in layers:
-        # Flatten weight: [out_features, in_features] -> [out_features * in_features]
         w = layer.mlp.gate_proj.weight.detach().cpu()
         layer_weights.append(w.view(-1))
 
     return layer_weights
 
+def group_weights_into_blocks(layer_weights, block_size: int):
+    block_weights = []
+    # Group the layer weights into blocks of 'block_size'
+    for i in range(0, len(layer_weights), block_size):
+        # Concatenate the flattened layer vectors in this block into one giant block vector
+        block = torch.cat(layer_weights[i : i + block_size])
+        block_weights.append(block)
+    return block_weights
 
-def create_and_save_similarity_plot(similarity_matrix, save_path_svg, stage_name, step):
+
+def create_and_save_similarity_plot(similarity_matrix, save_path_svg, stage_name, step, unit_name="layer"):
     # Plot layer similarities
     plt.figure(figsize=(10, 8))
     sns.heatmap(
@@ -55,11 +74,12 @@ def create_and_save_similarity_plot(similarity_matrix, save_path_svg, stage_name
         annot_kws={"size": 8}
     )
     if stage_name is not None:
-        plt.title(f"Layer Similarity - Stage: {stage_name} | Step: {step}")
+        plt.title(f"{unit_name} Similarity - Stage: {stage_name} | Step: {step}")
     else:
-        plt.title(f"Layer Similarity - Step: {step}")
-    plt.xlabel("Layer Index")
-    plt.ylabel("Layer Index")
+        plt.title(f"{unit_name} Similarity - Step: {step}")
+
+    plt.xlabel(f"{unit_name} Index")
+    plt.ylabel(f"{unit_name} Index")
 
     # Save as SVG and PNG for quick previews
     plt.savefig(save_path_svg, format='svg', bbox_inches='tight')
@@ -74,11 +94,11 @@ def calculate_similarity_matrix(layer_weights):
     return similarity_matrix
 
 
-def prepare_save_path(output_dir, stage_name, step):
+def prepare_save_path(output_dir, stage_name, step, unit_name="layer"):
     os.makedirs(output_dir, exist_ok=True)
     if stage_name is not None:
-        filename = f"layer_similarity_stage_{stage_name}_step_{step}.svg"
+        filename = f"{unit_name}_similarity_stage_{stage_name}_step_{step}.svg"
     else:
-        filename = f"layer_similarity_step_{step}.svg"
+        filename = f"{unit_name}_similarity_step_{step}.svg"
     save_path = os.path.join(output_dir, filename)
     return save_path
