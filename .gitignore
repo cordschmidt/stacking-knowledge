@@ -203,3 +203,4 @@ src/tokenizer/tokenizer_8192.json
 /wandb
 /slurm_files
 /outputs_config
+/src/tokenizer/llama_tokenizer_3072

@@ -34,7 +34,7 @@ from .evaluator import ZeroShotEvaluator, SuperGlueEvaluator
 from src.helper.dataset_preprocessor import base_collate_fn
 from src.helper.inference import compute_trainer_perplexity, prepare_dataset_for_ppl_inference
 from .gradual_stacking.stacking_callback import GradualStackingCallback
-from .helper.visualization import calculate_and_save_layer_similarity_plot
+from .helper.visualization import create_layer_and_block_similarity_plots
 
 # Set up logging for different components of the trainer
 logger = logging.getLogger(__name__)
@@ -44,15 +44,19 @@ class FinalLayerSimilarityCallback(TrainerCallback):
     """
     Saves the layer similarity matrix at the very end of training for any model.
     """
+    def __init__(self, block_size: int = 1):
+        self.block_size = block_size
+
     def on_train_end(self, args, state, control, model=None, **kwargs):
         if model is not None:
             results_dir = args.output_dir.replace("checkpoints/", "results/")
             # Save in the root output directory (results/run_name/)
-            calculate_and_save_layer_similarity_plot(
+            create_layer_and_block_similarity_plots(
                 model,
                 output_dir=os.path.join(results_dir, f"checkpoint-{state.global_step}"),
                 stage_name=None,
-                step=state.global_step
+                step=state.global_step,
+                block_size=self.block_size
             )
 
 
@@ -279,8 +283,14 @@ class CustomTrainer(Trainer):
         # Coordination flag to prevent duplicate evaluations at the same step
         self._last_eval_step_stacking_and_data_curriculum = -1
 
+        # Determine the block size for the final layer similarity plot
+        if self.hydra_config.gradual_stacking.enabled:
+            final_plot_block_size = self.hydra_config.gradual_stacking.layer_per_block
+        else:
+            final_plot_block_size = 1
+
         # Add the general similarity callback (runs for all models at the end)
-        self.add_callback(FinalLayerSimilarityCallback())
+        self.add_callback(FinalLayerSimilarityCallback(block_size=final_plot_block_size))
 
         # Flag indicating whether training is distributed across multiple GPUs/processes
         self.is_distributed = self.args.world_size > 1

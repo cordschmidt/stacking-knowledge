@@ -6,7 +6,7 @@ import os
 import torch.distributed as dist
 from transformers import TrainerCallback
 from src.gradual_stacking.scheduler import PropAlphaScheduler
-from src.helper.visualization import calculate_and_save_layer_similarity_plot
+from src.helper.visualization import create_layer_and_block_similarity_plots
 
 logger = logging.getLogger("Gradual Stacking")
 
@@ -89,11 +89,12 @@ class GradualStackingCallback(TrainerCallback):
                 "This should not happen and might be caused by a bug inside the code"
             )
         results_dir = args.output_dir.replace("checkpoints/", "results/")
-        calculate_and_save_layer_similarity_plot(
+        create_layer_and_block_similarity_plots(
             model,
             output_dir=os.path.join(results_dir, f"checkpoint-{state.global_step}"),
             stage_name=f"end_of_stage_{self.scheduler.get_current_stage(state.global_step)}",
-            step=state.global_step
+            step=state.global_step,
+            block_size=self.block_size
         )
 
         # Log model stats before growth
@@ -108,9 +109,9 @@ class GradualStackingCallback(TrainerCallback):
         if args.world_size > 1:
             dist.barrier()
 
-        duplicated_middle_block = self._duplicate_middle_block(model)
+        original_middle_block, duplicated_middle_block = self._duplicate_middle_block(model)
 
-        self._register_new_parameters_in_optimizer(optimizer, duplicated_middle_block)
+        self._register_new_parameters_in_optimizer(optimizer, original_middle_block, duplicated_middle_block)
 
         # Synchronize again after growth
         if args.world_size > 1:
@@ -122,6 +123,9 @@ class GradualStackingCallback(TrainerCallback):
 
         # Determine middle block
         middle_block_idx = math.ceil(len(blocks) / 2) - 1  # Use ceiling function as in MIDAS paper and subtract 1 for indexing lists correctly
+
+        # Extract original middle block
+        original_middle_block = blocks[middle_block_idx]
 
         # Duplicate the layers of the middle block
         duplicated_middle_block = [copy.deepcopy(layer) for layer in blocks[middle_block_idx]]
@@ -146,11 +150,38 @@ class GradualStackingCallback(TrainerCallback):
             f"new no. of layers: {len(model.model.layers)}, "
             f"total params: {total_params_after_growth}"
         )
-        return duplicated_middle_block
+        return original_middle_block, duplicated_middle_block
 
-    def _register_new_parameters_in_optimizer(self, optimizer, duplicated_middle_block):
-        for layer in duplicated_middle_block:
-            optimizer.param_groups[0]["params"].extend(list(layer.parameters()))
-            for p in layer.parameters():
-                if p.requires_grad and p not in optimizer.state:
-                    optimizer.state[p] = {}
+    def _register_new_parameters_in_optimizer(self, optimizer, original_middle_block, duplicated_middle_block):
+        # Iterate through all layers of the duplicated block
+        for original_layer, duplicated_layer in zip(original_middle_block, duplicated_middle_block):
+            # Iterate through all params
+            for (original_param_name, original_param), (duplicated_param_name, duplicated_param) in zip(original_layer.named_parameters(), duplicated_layer.named_parameters()):
+                if duplicated_param.requires_grad:
+                    self._add_param_to_appropriate_optimizer_group(optimizer, duplicated_param, duplicated_param_name)
+                    self._deepcopy_optimizer_state_from_param(optimizer, original_param, duplicated_param)
+
+    def _add_param_to_appropriate_optimizer_group(self, optimizer, duplicated_param, duplicated_param_name):
+        decay_group = optimizer.param_groups[0]["params"]
+        no_decay_group = optimizer.param_groups[1]["params"] if len(optimizer.param_groups) > 1 else None
+        if self._is_param_in_no_decay_group(no_decay_group, duplicated_param, duplicated_param_name):
+            no_decay_group.append(duplicated_param)
+        else:
+            decay_group.append(duplicated_param)
+
+
+    def _is_param_in_no_decay_group(self, no_decay_group, param, param_name):
+        is_decay_group_in_optimizer = no_decay_group is not None
+        is_bias_param = (param.ndim == 1 or param_name.endswith(".bias"))
+        if is_decay_group_in_optimizer and is_bias_param:
+            return True
+        else:
+            return False
+
+    def _deepcopy_optimizer_state_from_param(self, optimizer, original_param, duplicated_param):
+        # Deepcopy optimizer state from original parameter
+        if original_param in optimizer.state:
+            optimizer.state[duplicated_param] = copy.deepcopy(optimizer.state[original_param])
+        else:
+            # Fallback
+            optimizer.state[duplicated_param] = {}
