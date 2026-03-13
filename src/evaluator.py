@@ -243,6 +243,11 @@ class BaseEvaluator(metaclass=ABCMeta):
 
         new_results_dir = self._determine_new_results_dir(project_root=project_root, relative_path=relative_path, checkpoint_name=checkpoint_name)
 
+        if new_results_dir.exists():
+            logger.warning(
+                f"Destination path '{new_results_dir}' already exists. Removing the existing directory to overwrite it with fresh results.")
+            shutil.rmtree(new_results_dir)
+        
         # Move the directory
         shutil.move(str(eval_output_dir), str(new_results_dir))
 
