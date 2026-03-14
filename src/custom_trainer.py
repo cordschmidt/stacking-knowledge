@@ -72,6 +72,8 @@ class FLOPTrainingLimitCallback(TrainerCallback):
     def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         if self.max_flops is not None and state.total_flos >= self.max_flops:
             logger.info(f"FLOP limit reached: {state.total_flos} >= {self.max_flops}. Stopping training.")
+            control.should_evaluate = True
+            control.should_save = True
             control.should_training_stop = True
 
 
@@ -95,6 +97,7 @@ class StagedEvaluationCallback(TrainerCallback):
             else:
                 # Evaluate & save the model
                 self.trainer.evaluate()
+                control.should_save = True
 
     def _initialize_boundaries(self, train_loader):
 
