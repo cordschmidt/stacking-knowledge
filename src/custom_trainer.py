@@ -39,6 +39,7 @@ from .helper.visualization import create_layer_and_block_similarity_plots
 # Set up logging for different components of the trainer
 logger = logging.getLogger(__name__)
 data_cl_logger = logging.getLogger("Data Curriculum")
+staged_eval_logger = logging.getLogger("Staged Evaluation")
 
 class FinalLayerSimilarityCallback(TrainerCallback):
     """
@@ -90,14 +91,11 @@ class StagedEvaluationCallback(TrainerCallback):
             train_loader = kwargs.get("train_dataloader")
             self._initialize_boundaries(train_loader=train_loader)
         # Check if next step is a boundary
-        if (state.global_step) in self._boundaries:
-            logger.info(f"Stage boundary will be reached in the next step ({state.global_step}). Performing evaluation...")
-            if self._dry_run:
-                logger.info(f"Evaluation at stage end will be skipped in dry run")
-            else:
-                # Evaluate & save the model
-                self.trainer.evaluate()
-                control.should_save = True
+        if (state.global_step + 1) in self._boundaries:
+            staged_eval_logger.info(f"Stage boundary will be reached in the next step ({state.global_step}). Performing evaluation...")
+            # Evaluate & save the model
+            control.should_evaluate = True
+            control.should_save = True
 
     def _initialize_boundaries(self, train_loader):
 
@@ -106,7 +104,7 @@ class StagedEvaluationCallback(TrainerCallback):
 
         if self._boundaries:
             self._initialized = True
-            logger.info(f"StagedEvaluationCallback: Unified boundaries detected: {sorted(list(self._boundaries))}")
+            staged_eval_logger.info(f"StagedEvaluationCallback: Unified boundaries detected: {sorted(list(self._boundaries))}")
         else:
             raise RuntimeError("StagedEvaluationCallback: No boundaries could be detected, "
                                "even though StagedEvaluationCallback was created.")
