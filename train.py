@@ -31,6 +31,14 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args)
     # Start or resume training
     trainer.train(resume_from_checkpoint=cfg.experiment.resume_checkpoint_path)
 
+    # Manually load the model to restore its exact architecture from the best step,
+    # overriding the fully-grown model in case of gradual stacking
+    if trainer.state.best_model_checkpoint is not None:
+        logger.info(f"Reloading model architecture and weights from {trainer.state.best_model_checkpoint}")
+        trainer.model = type(trainer.model).from_pretrained(
+            trainer.state.best_model_checkpoint
+        ).to(trainer.args.device)
+
     # After training completes, set flags to enable evaluation on all the benchmark tasks / metrics
     trainer.eval_glue = True
     trainer.eval_blimp = True
