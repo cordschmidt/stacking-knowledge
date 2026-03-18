@@ -8,7 +8,8 @@ from hydra.core.config_store import ConfigStore
 from src.config import BabyLMConfig
 from src.custom_trainer import CustomTrainer
 from src.helper.cleanup import cleanup_output_dir
-from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer, preprocess_data
+from src.helper.data_and_model_loading import load_dataset_model_and_tokenizer, preprocess_data, \
+    truncate_model_if_best_checkpoint_size_differs
 from src.helper.setup_environment import setup_environment
 from src.helper.trainer_init import create_trainer
 from src.helper.validate_config import validate_and_adjust_config, \
@@ -33,11 +34,7 @@ def train_and_evaluate(cfg: BabyLMConfig, trainer: CustomTrainer, training_args)
 
     # Manually load the model to restore its exact architecture from the best step,
     # overriding the fully-grown model in case of gradual stacking
-    if trainer.state.best_model_checkpoint is not None:
-        logger.info(f"Reloading model architecture and weights from {trainer.state.best_model_checkpoint}")
-        trainer.model = type(trainer.model).from_pretrained(
-            trainer.state.best_model_checkpoint
-        ).to(trainer.args.device)
+    truncate_model_if_best_checkpoint_size_differs(trainer=trainer)
 
     # After training completes, set flags to enable evaluation on all the benchmark tasks / metrics
     trainer.eval_glue = True
