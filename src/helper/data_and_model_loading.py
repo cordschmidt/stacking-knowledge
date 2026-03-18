@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import torch
@@ -6,6 +7,8 @@ import numpy as np
 
 from datasets import Dataset, DatasetDict, load_dataset
 from collections import Counter
+from transformers.modeling_utils import unwrap_model
+from safetensors.torch import load_file
 
 from src.config import BabyLMConfig
 from src.tokenizer import load_tokenizer
@@ -157,3 +160,44 @@ def print_model_stats(model, name="Model"):
     logger.info(f"  Total parameters: {total_params:,}")
     logger.info(f"  Non-embedding parameters: {num_non_embed_params:,}\n")
     logger.info(f"  Non-vocabulary parameters: {num_non_vocab_params:,}\n")
+
+
+def truncate_model_if_best_checkpoint_size_differs(trainer):
+    """
+    Prevent erroneous evaluation results for gradual stacking, as model size
+    differs from the model size during the best checkpoint
+    """
+    if trainer.state.best_model_checkpoint is not None:
+        model = unwrap_model(trainer.model)
+        number_of_layers_current_model, number_of_layers_best_model = determine_number_of_layers_for_current_and_best_model(trainer=trainer, model=model)
+
+        # Truncate model if size differs
+        if number_of_layers_current_model > number_of_layers_best_model:
+            truncate_model(model, number_of_layers_current_model, number_of_layers_best_model)
+
+        elif number_of_layers_current_model == number_of_layers_best_model:
+            pass
+        else:
+            logger.warning(
+                f"Unexpected model size: Current model has fewer layers ({number_of_layers_current_model}) than best checkpoint ({number_of_layers_best_model})")
+
+def truncate_model(model, number_of_layers_current_model, number_of_layers_best_model):
+    logger.info(
+        f"Truncate model from {number_of_layers_current_model} down to {number_of_layers_best_model} layers")
+    model.model.layers = model.model.layers[:number_of_layers_best_model]
+
+    # Update the config so internal Hugging Face checks don't get confused
+    model.config.num_hidden_layers = number_of_layers_best_model
+
+def determine_number_of_layers_for_current_and_best_model(trainer, model):
+    checkpoint_dir = trainer.state.best_model_checkpoint
+
+    # Check how many layers best checkpoint model has
+    config_path = os.path.join(checkpoint_dir, "config.json")
+    with open(config_path, "r") as f:
+        number_of_layers_best_model = json.load(f)["num_hidden_layers"]
+
+    # Check how many layers current model has
+    number_of_layers_current_model = len(model.model.layers)
+
+    return number_of_layers_current_model, number_of_layers_best_model
