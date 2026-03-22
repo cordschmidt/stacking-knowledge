@@ -138,6 +138,7 @@ class GradualStackingParams(DictConfig):
     layer_per_block: Optional[int] = 1 # Number of layers that are considered as one block - per stage, the middle block of layers will be duplicated
     number_non_embedding_params_compute_equivalent_model: Optional[int] = None # Number of parameters of a (constant-sized) model, that the gradual stacking model should be compared to. Based on the size differences, steps will be adjusted in order to app. match compute equivalence (number of steps in config must be the same)
     align_with_staged_data_curriculum: Optional[bool] = False
+    cleaning_optimizer_state: Optional[bool] = False
 
 @dataclass
 class ContinualPretrainingParams(DictConfig):
