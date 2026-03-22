@@ -251,7 +251,8 @@ class CustomTrainer(Trainer):
                                                         k_number_of_stages = self.hydra_config.gradual_stacking.k_number_of_stages,
                                                         alpha = self.hydra_config.gradual_stacking.alpha,
                                                         layer_per_block = self.hydra_config.gradual_stacking.layer_per_block,
-                                                        align_with_staged_data_curriculum=self.hydra_config.gradual_stacking.align_with_staged_data_curriculum)
+                                                        align_with_staged_data_curriculum=self.hydra_config.gradual_stacking.align_with_staged_data_curriculum,
+                                                        cleaning_optimizer_state=self.hydra_config.gradual_stacking.cleaning_optimizer_state)
             self.add_callback(stacking_callback)
 
         is_staged_data_curriculum = (

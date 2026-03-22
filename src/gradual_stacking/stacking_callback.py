@@ -12,12 +12,13 @@ logger = logging.getLogger("Gradual Stacking")
 
 
 class GradualStackingCallback(TrainerCallback):
-    def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float, layer_per_block: int, align_with_staged_data_curriculum: bool):
+    def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float, layer_per_block: int, align_with_staged_data_curriculum: bool, cleaning_optimizer_state: bool):
         if not isinstance(layer_per_block, int) or layer_per_block <= 0:
             raise ValueError(f"layer_per_block must be a positive integer, got {layer_per_block}")
         self.block_size = layer_per_block
         self.align_with_staged_data_curriculum = align_with_staged_data_curriculum
         self.total_training_steps = total_training_steps
+        self.cleaning_optimizer_state = cleaning_optimizer_state
         # Prepare set for tracking the steps at which the model has been grown
         self._grown_steps = set()
         # Initialize Prop-alpha scheduler
@@ -160,6 +161,9 @@ class GradualStackingCallback(TrainerCallback):
                 if duplicated_param.requires_grad:
                     self._add_param_to_appropriate_optimizer_group(optimizer, duplicated_param, duplicated_param_name)
                     self._deepcopy_optimizer_state_from_param(optimizer, original_param, duplicated_param)
+        if self.cleaning_optimizer_state:
+            optimizer.state.clear()
+            logger.info("Optimizer states have been cleared for the new stage")
 
     def _add_param_to_appropriate_optimizer_group(self, optimizer, duplicated_param, duplicated_param_name):
         decay_group = optimizer.param_groups[0]["params"]
