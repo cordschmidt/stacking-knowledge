@@ -70,6 +70,13 @@ def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
         remove_columns=dataset["validation"].column_names,
     )
 
+    dev_dataset = dataset["test"].map(
+        data_preprocessor,
+        batched=True,
+        num_proc=64,
+        remove_columns=dataset["validation"].column_names,
+    )
+
     # Subsample dataset in dry run by desired factor & log dataset size & corpus distributions
     if cfg.experiment.dry_run:
         logger.info(
@@ -77,16 +84,20 @@ def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
         )
         train_dataset = stratified_subsample_by_corpus(train_dataset, subsample_factor=DRY_RUN_SUBSAMPLE_FACTOR, corpora_column_name="filename", seed=cfg.experiment.seed)
         eval_dataset = stratified_subsample_by_corpus(eval_dataset, subsample_factor=DRY_RUN_SUBSAMPLE_FACTOR, corpora_column_name="filename", seed=cfg.experiment.seed)
+        dev_dataset = stratified_subsample_by_corpus(dev_dataset, subsample_factor=DRY_RUN_SUBSAMPLE_FACTOR,
+                                                      corpora_column_name="filename", seed=cfg.experiment.seed)
 
         log_corpus_distribution(train_dataset, name="train_dataset (after subsampling)")
         log_corpus_distribution(eval_dataset, name="eval_dataset (after subsampling)")
+        log_corpus_distribution(dev_dataset, name="dev_dataset (after subsampling)")
 
     # If not in dry run, just log dataset size & corpus distributions
     else:
         log_corpus_distribution(train_dataset, name="train_dataset")
         log_corpus_distribution(eval_dataset, name="eval_dataset")
+        log_corpus_distribution(dev_dataset, name="eval_dataset")
 
-    return train_dataset, eval_dataset
+    return train_dataset, eval_dataset, dev_dataset
 
 
 def stratified_subsample_by_corpus(dataset: Dataset, subsample_factor: int, corpora_column_name: str = "filename", seed: int = 42) -> Dataset:

@@ -1,6 +1,4 @@
-import copy
 import logging
-import re
 
 import torch
 import time
@@ -23,10 +21,12 @@ from transformers.modeling_utils import unwrap_model
 
 # Local imports
 from .config import BabyLMConfig
+from .continual_pretraining.infinite_lr_scheduler import InfiniteLRScheduler
 from .continual_pretraining.learning_rate_reset_callback import LearningRateResetCallback
 # Data curriculum related
 from .data_curriculum.datasampler import CurriculumSampler, DistributedCurriculumSampler
 from .data_curriculum.difficulty_scorer import get_difficulty_scorer
+from .data_curriculum.dynamic_curriculum_callback import DynamicCurriculumCallback
 from .data_curriculum.pacing_fn import get_pacing_fn
 from .dataloader import CurriculumDataLoader
 
@@ -193,6 +193,7 @@ class CustomTrainer(Trainer):
         args: TrainingArguments,
         tokenizer: PreTrainedTokenizerFast,
         curriculum_learning_table: Union[Table, None] = None,
+        dev_dataset=None,
         **kwargs,
     ) -> None:
         """
@@ -225,6 +226,8 @@ class CustomTrainer(Trainer):
         self.skip_execution_of_eval_scripts_for_debugging = (
             hydra_config.experiment.skip_execution_of_eval_scripts_for_debugging
         )
+
+        self.dev_dataset = dev_dataset
 
         # Call the parent Trainer's __init__ method to set up standard training components
         super().__init__(args=args, **kwargs)
@@ -266,6 +269,24 @@ class CustomTrainer(Trainer):
             scorer_kwargs = self.data_curriculum_cfg.difficulty_scorer_kwargs or {}
             should_lr_reset = hydra_config.continual_pretraining.enable_lr_reset
 
+            if self.data_curriculum_cfg.difficulty_scorer_kwargs:
+                kwargs_dict = self.data_curriculum_cfg.difficulty_scorer_kwargs
+                # Set dynamic data curriculum pacing
+                if kwargs_dict.get("dynamic_pacing", False):
+                    data_cl_logger.info("Dynamic Data Curriculum enabled: Adding DynamicCurriculumCallback")
+                    patience = kwargs_dict.get("patience", 3)
+                    dev_eval_steps = kwargs_dict.get("dev_eval_steps", self.hydra_config.trainer.max_training_steps // 100)
+                    dev_subset_size = kwargs_dict.get("dev_eval_subset_size", 1000)
+                    self.add_callback(
+                        DynamicCurriculumCallback(
+                            trainer=self,
+                            dev_dataset = self.dev_dataset,
+                            eval_steps=dev_eval_steps,
+                            subset_size=dev_subset_size,
+                            patience=patience,
+                        )
+                    )
+
             if is_staged_data_curriculum and should_lr_reset:
                 logger.info("Continual Pre-training enabled: Adding LearningRateResetCallback")
                 # The callback will handle boundary calculation internally as discussed
@@ -296,6 +317,29 @@ class CustomTrainer(Trainer):
 
         # Flag indicating whether training is distributed across multiple GPUs/processes
         self.is_distributed = self.args.world_size > 1
+
+    def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
+        infinite_lr_config = self.hydra_config.get("infinite_lr_scheduler")
+
+        if infinite_lr_config and infinite_lr_config.get("enabled", False):
+            initial_last_stage_budget = None
+            # Only calculate last stage budget if staged data curriculum is active
+            if self.data_curriculum_cfg and self.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split":
+                # Set a safe fallback initially, will be overwritten when entering final stage
+                initial_last_stage_budget = num_training_steps // 6
+
+            self.lr_scheduler = InfiniteLRScheduler(
+                optimizer=self.optimizer if optimizer is None else optimizer,
+                lr_max=self.hydra_config.trainer.lr,
+                lr_min=infinite_lr_config.lr_min if infinite_lr_config.lr_const_steps is not None else self.hydra_config.trainer.lr * 0.1,
+                const_steps=infinite_lr_config.lr_const_steps if infinite_lr_config.lr_const_steps is not None else num_training_steps * 0.6,
+                total_max_steps=num_training_steps,
+                lr_const=infinite_lr_config.lr_const if hasattr(infinite_lr_config, 'lr_const') else None,
+                initial_last_stage_budget=initial_last_stage_budget
+            )
+            return self.lr_scheduler
+
+        return super().create_scheduler(num_training_steps, optimizer)
 
     def _get_train_sampler(self):
         """

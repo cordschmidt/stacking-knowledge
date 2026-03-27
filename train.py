@@ -57,9 +57,9 @@ def main(cfg: BabyLMConfig):
     validate_and_adjust_config(cfg=cfg)
     model, tokenizer, dataset = load_dataset_model_and_tokenizer(cfg)
     consider_step_adjustment_for_compute_equivalent_model_training(cfg=cfg, model=model)
-    train_dataset, eval_dataset = preprocess_data(cfg=cfg, tokenizer=tokenizer, dataset=dataset)
+    train_dataset, eval_dataset, dev_dataset = preprocess_data(cfg=cfg, tokenizer=tokenizer, dataset=dataset)
     curriculum_learning_table = enable_wandb_logging(cfg)
-    trainer, training_args = create_trainer(cfg=cfg, model=model, tokenizer=tokenizer, train_dataset=train_dataset, eval_dataset=eval_dataset, curriculum_learning_table=curriculum_learning_table)
+    trainer, training_args = create_trainer(cfg=cfg, model=model, tokenizer=tokenizer, train_dataset=train_dataset, eval_dataset=eval_dataset, dev_dataset=dev_dataset, curriculum_learning_table=curriculum_learning_table)
     train_and_evaluate(cfg, trainer, training_args)
 
 if __name__ == "__main__":

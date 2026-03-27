@@ -26,6 +26,8 @@ def validate_and_adjust_config(cfg: BabyLMConfig):
 
 def do_additional_config_validations(cfg: BabyLMConfig):
     validate_prop_alpha_aligned_data_curriculum_pacing(cfg=cfg)
+    validate_dynamic_curriculum(cfg=cfg)
+    validate_infinite_lr_scheduler(cfg=cfg)
     validate_staged_proportion_mode(cfg=cfg)
     if cfg.continual_pretraining.enable_lr_reset:
         validate_staged_data_curriculum_is_enabled_for_continual_pretraining(cfg=cfg)
@@ -43,6 +45,27 @@ def validate_prop_alpha_aligned_data_curriculum_pacing(cfg: BabyLMConfig):
        cfg.data_curriculum.pacing_fn_name == "prop_alpha":
 
         validate_that_number_of_prop_alpha_stages_equal_number_of_datasets(cfg=cfg)
+
+def validate_dynamic_curriculum(cfg):
+    inf_cfg = cfg.get("infinite_lr_scheduler")
+    is_infinite_lr_enabled = inf_cfg is not None and inf_cfg.get("enabled", False)
+
+    if cfg.data_curriculum and cfg.data_curriculum.difficulty_scorer_kwargs:
+        if cfg.data_curriculum.difficulty_scorer_kwargs.get("dynamic_pacing", False):
+            if cfg.data_curriculum.difficulty_scorer_name != "staged_data_split":
+                raise ValueError("Dynamic pacing is only supported with the 'staged_data_split' difficulty scorer")
+            if not is_infinite_lr_enabled:
+                raise ValueError(
+                    "Dynamic pacing requires the infinite_lr_scheduler.enabled flag to be set to True in the trainer config")
+
+
+def validate_infinite_lr_scheduler(cfg):
+    infinite_lr_config = cfg.trainer.get("infinite_lr_scheduler")
+    is_infinite_lr_schedule_enabled = infinite_lr_config is not None and infinite_lr_config.get("enabled", False)
+    if is_infinite_lr_schedule_enabled and cfg.continual_pretraining.get("enable_lr_reset", False):
+        raise ValueError(
+            "Continual pretraining 'enable_lr_reset' must be disabled when using the infinite learning rate scheduler")
+
 
 def validate_that_number_of_prop_alpha_stages_equal_number_of_datasets(cfg: BabyLMConfig):
     # Check stage count alignment
@@ -142,6 +165,8 @@ def adjust_parameters_in_config_for_special_setups(cfg: BabyLMConfig):
 
     insert_data_replay_parameters_into_staged_data_split_scorer(cfg=cfg)
 
+    insert_dynamic_data_curriculum_default_params(cfg=cfg)
+
     # if cfg.data_curriculum and \
     #         cfg.data_curriculum.difficulty_scorer_name == "staged_data_split" and \
     #         cfg.data_curriculum.pacing_fn_name == "prop_alpha":
@@ -191,6 +216,26 @@ def insert_gradual_stacking_parameters_into_pacing_fn(cfg: BabyLMConfig):
     alpha_from_gradual_stacking_config = cfg.gradual_stacking.alpha
     cfg.data_curriculum.pacing_fn_kwargs["k_number_of_stages"] = k_stages_from_gradual_stacking_config
     cfg.data_curriculum.pacing_fn_kwargs["alpha"] = alpha_from_gradual_stacking_config
+
+def insert_dynamic_data_curriculum_default_params(cfg):
+    if cfg.data_curriculum and cfg.data_curriculum.difficulty_scorer_kwargs:
+        new_kwargs = dict(cfg.data_curriculum.difficulty_scorer_kwargs)
+        if new_kwargs.get("dynamic_pacing", False):
+            if new_kwargs.get("dev_eval_steps") is None:
+                new_kwargs["dev_eval_steps"] = cfg.trainer.max_training_steps // 100
+                logger.info(f"Set default values in dynamic data curriculum: Set 'dev_eval_steps' to {new_kwargs["dev_eval_steps"]}")
+            if new_kwargs.get("dev_eval_subset_size") is None:
+                new_kwargs["dev_eval_subset_size"] = 1000
+                logger.info(f"Set default values in dynamic data curriculum: Set 'dev_eval_subset_size' to {new_kwargs["dev_eval_subset_size"]}")
+            if new_kwargs.get("patience") is None:
+                new_kwargs["patience"] = 3
+                logger.info(f"Set default values in dynamic data curriculum: Set 'patience' to {new_kwargs["patience"]}")
+            if cfg.experiment.dry_run:
+                new_kwargs["dev_eval_subset_size"] = 100
+                logger.info(
+                    f"Dryrun, set 'dev_eval_subset_size' in dynamic data curriculum to {new_kwargs["dev_eval_subset_size"]}")
+            cfg.data_curriculum.difficulty_scorer_kwargs = new_kwargs
+
 
 def insert_data_replay_parameters_into_staged_data_split_scorer(cfg: BabyLMConfig):
     if cfg.data_curriculum and cfg.data_curriculum.difficulty_scorer_name == "staged_data_split":
