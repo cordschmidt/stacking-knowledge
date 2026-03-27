@@ -49,8 +49,12 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         self._last_active_level = None
         self.filtered_difficulty_scores = None
 
+        self.num_stages = NUM_STAGES
+
         # List which holds the percentiles at which a new stage begins
         self.transition_thresholds = []
+
+        self._forced_stage = 1
 
     @property
     def current_stage(self) -> int:
@@ -104,7 +108,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         """
         if self.proportion_mode is None:
             # Equal duration for every stage, e.g. [1/6, 2/6, 3/6, 4/6, 5/6]
-            self.transition_thresholds = [i / NUM_STAGES for i in range(1, NUM_STAGES)]
+            self.transition_thresholds = [i / self.num_stages for i in range(1, self.num_stages)]
             data_cl_logger.info(f"Calculated equal-interval thresholds: {self.transition_thresholds}")
         elif self.proportion_mode == "sample":
             counts_for_each_corpus = self._get_corpora_sample_sizes_on_complete_dataset(dataset=dataset)
@@ -136,8 +140,8 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
         # Calculate counts for stages 1 - 6 (torch starts indexing at 0, so we get stage 0 with 0 counts as well,
         # which we have to filter out, since our stages are 1-indexed)
-        counts = torch.bincount(stage_for_every_sample_tensor, minlength=NUM_STAGES + 1)
-        filtered_counts = counts[1:NUM_STAGES + 1]
+        counts = torch.bincount(stage_for_every_sample_tensor, minlength=self.num_stages + 1)
+        filtered_counts = counts[1:self.num_stages + 1]
 
         return filtered_counts
 
@@ -145,23 +149,35 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         """
         Aggregates token counts per stage using the static mapping in stages.py
         """
-        stage_counts = torch.zeros(NUM_STAGES, dtype=torch.float32)
+        stage_counts = torch.zeros(self.num_stages, dtype=torch.float32)
         for filename, stage in self.filename_to_difficulty_map.items():
             token_count = DATASET_TOKEN_COUNTS.get(filename, 0)
             # stages are 1-indexed, tensor is 0-indexed
             stage_counts[stage - 1] += token_count
         return stage_counts
 
+    def force_next_stage(self):
+        """
+        Dynamically forces the scorer to advance to the next stage
+        """
+        if self._forced_stage < self.num_stages:
+            self._forced_stage += 1
+
     def _determine_current_stage(self, max_difficulty_percentile: float) -> int:
         """
         Determines current stage by iterating through list of percentiles and checking when the current difficulty
         percentile is smaller than one of our thresholds
         """
+        normal_stage = self.num_stages
         for i, threshold in enumerate(self.transition_thresholds):
             if max_difficulty_percentile < threshold:
-                return i + 1
+                normal_stage = i + 1
+                break
+        # Sync _forced_stage if normal stage overtakes
+        if normal_stage > self._forced_stage:
+            self._forced_stage = normal_stage
         # If we exceed every threshold we are in the last stage
-        return NUM_STAGES
+        return max(normal_stage, self._forced_stage)
 
     def _update_filtered_difficulty_scores_for_new_stage(self, active_difficulty_level: int) -> None:
         # Use data replay (considering only the previous stage), when enabled and we're
@@ -226,7 +242,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         weight_previous_stage = self.data_replay_fraction * (number_of_tokens_current_stage / number_of_tokens_previous_stage)
 
         # Create a mapping for all possible stages (1 to NUM_STAGES)
-        weight_mapping = torch.zeros(NUM_STAGES + 1, dtype=torch.float32)
+        weight_mapping = torch.zeros(self.num_stages + 1, dtype=torch.float32)
         weight_mapping[active_difficulty_level] = weight_current_stage
         weight_mapping[active_difficulty_level - 1] = weight_previous_stage
 
@@ -246,7 +262,7 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         normalized_decay_factors = self._calculate_decay_factors_for_all_previous_stages(active_difficulty_level=active_difficulty_level, previous_stages=all_previous_stages)
 
         # Initialize weight mapping tensor
-        weight_mapping = torch.zeros(NUM_STAGES + 1, dtype=torch.float32)
+        weight_mapping = torch.zeros(self.num_stages + 1, dtype=torch.float32)
 
         # Set current stage weight
         weight_mapping[active_difficulty_level] = 1.0 - self.data_replay_fraction

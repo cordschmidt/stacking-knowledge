@@ -5,7 +5,7 @@ from transformers.training_args import TrainingArguments
 from src.config import BabyLMConfig
 from src.custom_trainer import CustomTrainer
 
-def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_dataset, curriculum_learning_table):
+def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_dataset, dev_dataset, curriculum_learning_table):
     # Create a TrainingArguments object which configures the Hugging Face Trainer behavior
     training_args = TrainingArguments(
         output_dir=f"checkpoints/{cfg.experiment.group}/{cfg.experiment.name}",  # Directory to save checkpoints and outputs
@@ -88,6 +88,7 @@ def create_trainer(cfg: BabyLMConfig, model, tokenizer, train_dataset, eval_data
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        dev_dataset=dev_dataset,
         tokenizer=tokenizer,
         curriculum_learning_table=curriculum_learning_table,
     )

@@ -150,6 +150,12 @@ class ContinualPretrainingParams(DictConfig):
     data_replay_fraction: Optional[float] = 0.0 # Fraction, how many % of samples from the previous stage(s) should be included when training the current stage
     data_replay_decay: Optional[float] = 1.0 # Control how fast old stages decay within the data replay
 
+@dataclass
+class InfiniteLrSchedulerParams(DictConfig):
+    enabled: bool = False
+    lr_min: Optional[float] = None
+    lr_const_steps: Optional[int] = None
+
 ### Container for entire config ###
 
 @dataclass
@@ -163,3 +169,4 @@ class BabyLMConfig(DictConfig):
     gradual_stacking: GradualStackingParams
     continual_pretraining: ContinualPretrainingParams
     data_curriculum: Optional[DataCurriculumParams] = None
+    infinite_lr_scheduler: Optional[InfiniteLrSchedulerParams] = None
