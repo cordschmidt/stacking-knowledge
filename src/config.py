@@ -170,4 +170,4 @@ class BabyLMConfig(DictConfig):
     gradual_stacking: GradualStackingParams
     continual_pretraining: ContinualPretrainingParams
     data_curriculum: Optional[DataCurriculumParams] = None
-    infinite_lr_scheduler: Optional[InfiniteLrSchedulerParams] = None
+    infinite_lr_scheduler: InfiniteLrSchedulerParams = None
