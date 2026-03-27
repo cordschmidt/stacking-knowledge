@@ -154,6 +154,7 @@ class ContinualPretrainingParams(DictConfig):
 class InfiniteLrSchedulerParams(DictConfig):
     enabled: bool = False
     lr_min: Optional[float] = None
+    lr_const: Optional[float] = None
     lr_const_steps: Optional[int] = None
 
 ### Container for entire config ###
