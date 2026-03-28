@@ -89,6 +89,9 @@ class DynamicCurriculumCallback(TrainerCallback):
         ppl_metrics = self.trainer._compute_perplexity_from_dataset(self.dev_dataset)
         current_ppl = ppl_metrics.get("perplexity_mean", float('inf'))
         logger.info(f"Step {state.global_step}): Dev PPL = {current_ppl:.4f}")
+
+        self.trainer.log({"dynamic_curriculum/dev_perplexity": current_ppl})
+
         return current_ppl
 
     def _check_and_handle_overfitting(self, current_ppl: float, current_stage: int, num_stages: int, scorer,
