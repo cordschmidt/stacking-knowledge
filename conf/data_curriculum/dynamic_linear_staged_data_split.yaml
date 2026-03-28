@@ -3,8 +3,8 @@
     proportion_mode: "token",
     dynamic_pacing: true,
     dev_eval_steps: null,
-    dev_eval_subset_size: 1000,
-    patience: 5,
+    dev_eval_subset_size: 15000,
+    patience: 3,
   }
 
   pacing_fn_name: "linear"
