@@ -1,4 +1,4 @@
-# CStacking Knowledge: Enhancing Curriculum Learning with Gradual Stacking and Continual Pre-Training 🧠⚡
+# Stacking Knowledge: Enhancing Curriculum Learning with Gradual Stacking and Continual Pre-Training 🧠⚡
 
 This repository contains the codebase for my Master's Thesis "Stacking Knowledge: Enhancing Curriculum Learning with Gradual Stacking and Continual Pre-Training" in the realm of investigating advanced training interventions in Small Language Models (SLMs), specifically in the context of the **BabyLM Challenge** (10M/100M word regimes). 
 
@@ -32,7 +32,8 @@ stacking-knowledge_clean/
 └── setup_environment.sh      # Setup script for SLURM/HPC clusters
 ```
 
-🏗️ Core Architecture Deep-Dive
+## 🏗️ Core Architecture Deep-Dive
+
 1. Data Curricula (src/data_curriculum/)
 Handles what data the model sees and when.
 
@@ -56,60 +57,81 @@ stacking_callback.py: Pauses the training loop at predefined computational bound
 
 scheduler.py: Calculates the exact global steps where architectural growth should occur, allowing it to align perfectly with data curriculum stage transitions.
 
-🚀 Environment Setup
+## 🚀 Environment Setup
+
 Option A: Local Workstation
 If you are running on a local machine (e.g., a local GPU rig or MacBook), ensure you have Conda/Miniconda installed:
 
-Bash
+```Bash
 git clone --recurse-submodules <YOUR_REPO_URL>
 cd stacking-knowledge_clean
+```
 
-# Creates a py313 env, installs PyTorch, dependencies, and eval pipeline requirements
-bash setup_local.sh
+### Creates a py313 env, installs PyTorch, dependencies, and eval pipeline requirements
+
+```Bash
+bash setup_environment.sh
 conda activate py313
+```
+
 Option B: HPC Cluster (SLURM)
 If deploying on a cluster, you must load environment modules (like CUDA) before installation.
 
-Bash
+```Bash
 git clone --recurse-submodules <YOUR_REPO_URL>
 cd stacking-knowledge_clean
+```
 
-# Loads cluster modules, builds the Conda environment
+### Loads cluster modules, builds the Conda environment
+
+```Bash
 bash setup_environment.sh
+```
 
-# Recommended: Pre-download Hugging Face datasets to the cluster's local scratch space
+### Recommended: Pre-download Hugging Face datasets to the cluster's local scratch space
+
+```Bash
 bash load_resources_on_cluster.sh
+```
+
 Authentication (Required)
 The project logs to Weights & Biases and pulls from Hugging Face. Do not hardcode your tokens. Export them in your terminal or add them to your ~/.bashrc:
 
-Bash
+```Bash
 export HF_TOKEN="<YOUR_HF_TOKEN_HERE>"
 export WANDB_API_KEY="<YOUR_WANDB_API_KEY_HERE>"
+```
 
+```
 huggingface-cli login --token $HF_TOKEN
 wandb login $WANDB_API_KEY
-🧪 Running Experiments
+```
+
+## 🧪 Running Experiments
 All training runs are orchestrated through Hydra, meaning you can swap model sizes, tokenizers, and curriculum strategies directly from the command line without modifying Python code.
 
-Running Locally
+### Running Locally
 To execute a standard random baseline (no curriculum interventions):
 
-Bash
+```Bash
 python train.py \
     model=llama_15M \
     tokenizer=llama_bpe_3072 \
     data_curriculum=null \
     experiment.wandb_project="my_thesis" \
     experiment.name="random_baseline"
+```
 To execute a run utilizing Continual Pre-Training (Data Replay + LR Rewarming):
 
-Bash
+```Bash
 python train.py \
     model=llama_15M \
     data_curriculum=linear_staged_data_split \
     data_curriculum.scorer.data_replay=0.05 \
     data_curriculum.scorer.replay_mode="all_previous" \
     experiment.learning_rate_reset_target=0.1
+```
+
 Submitting to a Cluster (SLURM)
 For heavy, multi-seed experiments, utilize the pre-configured scripts in slurm_scripts/.
 
@@ -117,20 +139,27 @@ Open the script you want to run (e.g., slurm_scripts/run_baselines_gradual_stack
 
 Verify the #SBATCH headers (partition, account, mail-user) match your cluster's requirements.
 
-Submit the job:
+### Submit the job:
 
-Bash
+```Bash
 sbatch slurm_scripts/run_baselines_gradual_stacking.sh
-📊 Evaluation Pipeline
+```
+
+## 📊 Evaluation Pipeline
+
 We utilize a submodule of the official BabyLM 2025 Evaluation Pipeline to benchmark linguistic capabilities (BLiMP, SuperGLUE, Age of Acquisition).
 
 Once a model finishes training, its checkpoints are saved locally. To evaluate a checkpoint zero-shot:
 
-Bash
+```Bash
 cd eval_pipeline
+```
 
-# Pass the path to your final checkpoint folder
+### Pass the path to your final checkpoint folder
+
+```Bash
 bash eval_zero_shot.sh ../checkpoints/your_model_run_name/checkpoint-final
+```
 The evaluation script will automatically detect the LLaMA architecture and tokenizer from your checkpoint directory and output JSON results for visualization.
 
 
