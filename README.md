@@ -1,4 +1,4 @@
-# CStacking Knowledge: Enhancing Curriculum Learning with Gradual Stacking and Continual Pre-Training 🧠⚡
+# Stacking Knowledge: Enhancing Curriculum Learning with Gradual Stacking and Continual Pre-Training 🧠⚡
 
 This repository contains the codebase for my Master's Thesis "Stacking Knowledge: Enhancing Curriculum Learning with Gradual Stacking and Continual Pre-Training" in the realm of investigating advanced training interventions in Small Language Models (SLMs), specifically in the context of the **BabyLM Challenge** (10M/100M word regimes). 
 
