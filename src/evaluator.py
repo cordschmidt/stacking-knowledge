@@ -36,15 +36,25 @@ class BaseEvaluator(metaclass=ABCMeta):
         task_prefix_to_add: str = None,
     ):
         """
-        Args:
-            * out_dir (str): Path to the output directory
-            * device (torch.device): Device to run the evaluation on
-            * process_index (int): Index of the current process
-            * world_size (int): Number of processes
-            * dry_run (bool): If True, don't actually run the evaluation script
-            * is_best_run (bool): If True, keep the predictions
-        """
+        Initializes the evaluation pipeline base class
 
+        Args:
+            out_dir: Path to the output directory
+            device: Device to run the evaluation on
+            process_index: Index of the current process
+            world_size: Number of processes
+            dry_run: If True, don't actually run the evaluation script
+            is_best_run: If True, indicates this is evaluating the best checkpoint
+            use_dummy_eval_data: If True, uses dummy evaluation data for local debugging
+            do_fast_eval: If True, executes a faster evaluation pipeline
+            experiment_name: The string name of the current experiment
+            global_steps: The current global step count
+            evaluator_name: The string name of the specific evaluator being run
+            task_prefix_to_add: An optional string prefix to add to benchmark names
+
+        Returns:
+            None
+        """
         self.out_dir = out_dir
         self.device = device
         self.process_index = process_index
@@ -60,11 +70,14 @@ class BaseEvaluator(metaclass=ABCMeta):
 
     def __call__(self) -> Union[Dict[str, Any], None]:
         """
-        Runs the BLIMP evaluation pipeline.
+        Runs the evaluation pipeline across all distributed processes
 
-        NOTE: If we are using DDP, this function will run on all the processes.
+        Args:
+            None
+
+        Returns:
+            A dictionary containing the parsed evaluation accuracies
         """
-
         logger.info(f"Running {self.evaluator_name} evaluation script...")
 
         checkpoint_name = self._determine_checkpoint_name()
@@ -97,6 +110,15 @@ class BaseEvaluator(metaclass=ABCMeta):
         return accuracies
 
     def _determine_checkpoint_name(self):
+        """
+        Determines the appropriate directory or identifier for the checkpoint
+
+        Args:
+            None
+
+        Returns:
+            A string representing the checkpoint name (e.g. 'checkpoint_best' or 'checkpoint_X')
+        """
         if self.is_best_run:
             checkpoint_name = "checkpoint_best"
         else:
@@ -104,9 +126,27 @@ class BaseEvaluator(metaclass=ABCMeta):
         return checkpoint_name
 
     def _prepare_command(self, checkpoint_name):
+        """
+        Prepares the shell command to execute the evaluation script. Subclasses must implement this
+
+        Args:
+            checkpoint_name: The string identifier of the checkpoint to evaluate
+
+        Returns:
+            A string representing the command to run
+        """
         raise NotImplementedError("Subclass must implement _prepare_command() with the specific script that has to be executed")
 
     def _execute_eval_script(self, cmd):
+        """
+        Starts a subprocess to run the evaluation script or skips it if using dummy data
+
+        Args:
+            cmd: The shell command string to execute
+
+        Returns:
+            None
+        """
         # If using dummy eval data, don't run script
         if self.use_dummy_eval_data:
             logger.info(
@@ -116,10 +156,28 @@ class BaseEvaluator(metaclass=ABCMeta):
             subprocess.run(cmd, shell=True)
 
     def _synchronize_distributed_processes(self):
+        """
+        Synchronizes all processes using a distributed barrier if world size > 1
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         if self.world_size > 1:
             dist.barrier()  # Synchronize DDP processes
 
     def _determine_output_dir_of_eval_results(self, checkpoint_name):
+        """
+        Determines the directory where the evaluation scripts output their raw results
+
+        Args:
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            A pathlib.Path object pointing to the output directory
+        """
         # Use dummy path or real output path depending on debug mode
         if self.use_dummy_eval_data:
             eval_output_dir = Path(DUMMY_DATA_DIR) / self.evaluator_name.lower()
@@ -151,7 +209,13 @@ class BaseEvaluator(metaclass=ABCMeta):
 
     def _gather_results_from_eval_pipeline(self, eval_output_dir: Path):
         """
-        Collects all results from the evaluation output directory, stored in best_temperature_report.txt or correlations.txt files
+        Collects and parses all results from the evaluation output directory
+
+        Args:
+            eval_output_dir: The Path object pointing to the raw evaluation results
+
+        Returns:
+            A dictionary containing the parsed benchmark accuracies
         """
         accuracies = {}
         for task_dir in eval_output_dir.rglob("*"):
@@ -182,7 +246,13 @@ class BaseEvaluator(metaclass=ABCMeta):
 
     def _parse_best_temperature_report_or_results_file_results(self, report_path: Path):
         """
-        Gets the accuracy values for a given best_temperature_report.txt file
+        Extracts accuracy values from a given best_temperature_report.txt or results.txt file
+
+        Args:
+            report_path: The Path object pointing to the text file
+
+        Returns:
+            A dictionary containing the parsed task accuracies
         """
         results = {}
         with report_path.open() as f:
@@ -205,7 +275,13 @@ class BaseEvaluator(metaclass=ABCMeta):
 
     def _parse_correlations_file_results(self, corr_path: Path):
         """
-        Gets the correlation values for a given correlations.txt file
+        Extracts correlation values from a given correlations.txt file
+
+        Args:
+            corr_path: The Path object pointing to the correlations text file
+
+        Returns:
+            A dictionary containing the parsed correlation results
         """
         results = {}
         with corr_path.open() as f:
@@ -216,6 +292,16 @@ class BaseEvaluator(metaclass=ABCMeta):
         return results
 
     def _move_eval_results_to_designated_folder_and_cleanup_predictions_in_eval_pipeline(self, eval_output_dir, checkpoint_name):
+        """
+        Moves the evaluation results out of the eval_pipeline and cleans up the directory (main process only)
+
+        Args:
+            eval_output_dir: The Path object pointing to the raw evaluation results
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            None
+        """
         # Clean up prediction folder within eval pipeline if not in debug mode and ensure this is done for only one process
         if self.process_index == 0:
             if self.use_dummy_eval_data:
@@ -227,11 +313,14 @@ class BaseEvaluator(metaclass=ABCMeta):
 
     def move_eval_results_to_project_root_results_dir(self, eval_output_dir, checkpoint_name):
         """
-        Move all evaluation results from eval_output_dir into a new
-        results/ folder at the project root, preserving the full hierarchy
-        under experiment/checkpoint/zero_shot/causal.
+        Moves all evaluation results from the eval_pipeline folder to a new results/ folder at the project root
 
-        The project root is inferred from eval_output_dir as the parent of eval_pipeline.
+        Args:
+            eval_output_dir: The Path or string path of the evaluation output directory
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            None
         """
         eval_output_dir = Path(eval_output_dir).resolve()
 
@@ -257,6 +346,15 @@ class BaseEvaluator(metaclass=ABCMeta):
         self._remove_empty_results_dirs_in_eval_pipeline(eval_output_dir=eval_output_dir, project_root=project_root)
 
     def _determine_relative_path_within_results_dir_and_project_root(self, eval_output_dir):
+        """
+        Infers the project root and the relative path hierarchy after the 'eval_pipeline/results' directory
+
+        Args:
+            eval_output_dir: The Path object of the evaluation output directory
+
+        Returns:
+            A tuple containing (relative_path_as_Path, project_root_as_Path)
+        """
         # Infer project root (parent of eval_pipeline)
         try:
             # Find 'eval_pipeline' in the path
@@ -277,6 +375,17 @@ class BaseEvaluator(metaclass=ABCMeta):
         return relative_path, project_root
 
     def _determine_new_results_dir(self, project_root, relative_path, checkpoint_name):
+        """
+        Calculates the destination path for the evaluation results in the project root
+
+        Args:
+            project_root: The Path object pointing to the root of the project
+            relative_path: The Path object indicating the relative hierarchy
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            A Path object pointing to the new results directory
+        """
         new_output_dir = os.path.dirname(self.out_dir).replace("checkpoints", "results")
         new_results_dir = project_root / new_output_dir / relative_path
         if not self.dry_run:
@@ -286,6 +395,16 @@ class BaseEvaluator(metaclass=ABCMeta):
         return new_results_dir
 
     def _remove_empty_results_dirs_in_eval_pipeline(self, eval_output_dir, project_root):
+        """
+        Cleans up any empty parent directories left in the eval_pipeline/results folder after moving files
+
+        Args:
+            eval_output_dir: The Path object representing where the files originally were
+            project_root: The Path object pointing to the root of the project
+
+        Returns:
+            None
+        """
         # Cleanup: remove empty parent dirs under eval_pipeline/results
         parent = eval_output_dir.parent
         while parent != project_root / "eval_pipeline":
@@ -300,6 +419,15 @@ class BaseEvaluator(metaclass=ABCMeta):
 class ZeroShotEvaluator(BaseEvaluator):
 
     def _prepare_command(self, checkpoint_name):
+        """
+        Prepares the specific bash command to execute the Zero-Shot evaluation script
+
+        Args:
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            A string representing the shell command to execute
+        """
         # Make sure to pass an absolute path
         model_path_absolute = Path(self.out_dir).resolve()
         # Run fast evaluation in dry run
@@ -322,6 +450,15 @@ class ZeroShotEvaluator(BaseEvaluator):
 class SuperGlueEvaluator(BaseEvaluator):
 
     def __call__(self) -> Union[Dict[str, Any], None]:
+        """
+        Executes the SuperGLUE evaluation pipeline and subsequently cleans up evaluation model files
+
+        Args:
+            None
+
+        Returns:
+            A dictionary containing the parsed evaluation accuracies
+        """
         # Run the standard evaluation pipeline completely
         accuracies = super().__call__()
 
@@ -334,6 +471,15 @@ class SuperGlueEvaluator(BaseEvaluator):
         return accuracies
 
     def _prepare_command(self, checkpoint_name):
+        """
+        Prepares the specific bash command to execute the SuperGLUE fine-tuning evaluation script
+
+        Args:
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            A string representing the shell command to execute
+        """
         model_path_absolute = Path(self.out_dir).resolve()
         logger.info(f"Model path: {model_path_absolute}")
         cmd = (
@@ -350,6 +496,15 @@ class SuperGlueEvaluator(BaseEvaluator):
         return cmd
 
     def _determine_output_dir_of_eval_results(self, checkpoint_name):
+        """
+        Determines the output directory specific to the SuperGLUE evaluation pipeline results
+
+        Args:
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            A pathlib.Path object pointing to the output directory
+        """
         # Use dummy path or real output path depending on debug mode
         if self.use_dummy_eval_data:
             eval_output_dir = Path(DUMMY_DATA_DIR) / self.evaluator_name.lower()
@@ -368,6 +523,17 @@ class SuperGlueEvaluator(BaseEvaluator):
         return eval_output_dir
 
     def _determine_new_results_dir(self, project_root, relative_path, checkpoint_name):
+        """
+        Calculates the destination path for SuperGLUE evaluation results in the project root
+
+        Args:
+            project_root: The Path object pointing to the root of the project
+            relative_path: The Path object indicating the relative hierarchy
+            checkpoint_name: The string identifier of the checkpoint
+
+        Returns:
+            A Path object pointing to the new results directory
+        """
         new_output_dir = os.path.dirname(self.out_dir).replace("checkpoints", "results")
         new_results_dir = project_root / new_output_dir / relative_path
         # Replace main folder with checkpoint name
@@ -376,8 +542,15 @@ class SuperGlueEvaluator(BaseEvaluator):
         return new_results_dir
 
     def _delete_eval_models_directory(self):
-        """Deletes the eval_pipeline/models/<experiment_name> directory after evaluation"""
+        """
+        Deletes the fine-tuned model artifacts generated by the SuperGLUE evaluation script to save space
 
+        Args:
+            None
+
+        Returns:
+            None
+        """
         # Only delete on main process and if we're not using dummy data
         if self.process_index == 0 and not self.use_dummy_eval_data:
             models_dir = Path("eval_pipeline/models") / self.experiment_name

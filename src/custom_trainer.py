@@ -43,12 +43,34 @@ staged_eval_logger = logging.getLogger("Staged Evaluation")
 
 class FinalLayerSimilarityCallback(TrainerCallback):
     """
-    Saves the layer similarity matrix at the very end of training for any model.
+    Saves the layer similarity matrix at the very end of training for any model
     """
     def __init__(self, block_size: int = 1):
+        """
+        Initializes the FinalLayerSimilarityCallback
+
+        Args:
+            block_size: The number of layers grouped together for block-level similarity analysis
+
+        Returns:
+            None
+        """
         self.block_size = block_size
 
     def on_train_end(self, args, state, control, model=None, **kwargs):
+        """
+        Triggers at the end of training to generate and save similarity plots
+
+        Args:
+            args: The training arguments
+            state: The current TrainerState
+            control: The TrainerControl object
+            model: The trained model
+            **kwargs: Additional arguments
+
+        Returns:
+            None
+        """
         if model is not None:
             results_dir = args.output_dir.replace("checkpoints/", "results/")
             # Save in the root output directory (results/run_name/)
@@ -64,13 +86,34 @@ class FinalLayerSimilarityCallback(TrainerCallback):
 class FLOPTrainingLimitCallback(TrainerCallback):
     """
     A callback that monitors training progress and signals to stop
-    if step or FLOP limits are reached.
+    if step or FLOP limits are reached
     """
 
     def __init__(self, max_flops: Optional[float] = None):
+        """
+        Initializes the FLOPTrainingLimitCallback
+
+        Args:
+            max_flops: The maximum allowed floating point operations before halting training
+
+        Returns:
+            None
+        """
         self.max_flops = max_flops
 
     def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """
+        Checks the accumulated FLOPs at the end of each step and stops training if the limit is exceeded
+
+        Args:
+            args: The training arguments
+            state: The current TrainerState containing accumulated FLOPs
+            control: The TrainerControl object used to stop training
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            None
+        """
         if self.max_flops is not None and state.total_flos >= self.max_flops:
             logger.info(f"FLOP limit reached: {state.total_flos} >= {self.max_flops}. Stopping training.")
             control.should_evaluate = True
@@ -80,12 +123,33 @@ class FLOPTrainingLimitCallback(TrainerCallback):
 
 class StagedEvaluationCallback(TrainerCallback):
     def __init__(self, trainer):
+        """
+        Initializes the StagedEvaluationCallback
+
+        Args:
+            trainer: The CustomTrainer instance
+
+        Returns:
+            None
+        """
         self.trainer = trainer
         self._boundaries = set()
         self._initialized = False
         self._dry_run = trainer.dry_run
 
     def on_step_end(self, args, state, control, **kwargs):
+        """
+        Checks if the next step is a stage boundary and triggers an evaluation if so
+
+        Args:
+            args: The training arguments
+            state: The current TrainerState
+            control: The TrainerControl object
+            **kwargs: Additional keyword arguments, notably 'train_dataloader'
+
+        Returns:
+            None
+        """
         # Initialize boundaries by reading from other callbacks
         if not self._initialized:
             train_loader = kwargs.get("train_dataloader")
@@ -98,7 +162,15 @@ class StagedEvaluationCallback(TrainerCallback):
             control.should_save = True
 
     def _initialize_boundaries(self, train_loader):
+        """
+        Collects stage boundary steps from gradual stacking and data curriculum callbacks
 
+        Args:
+            train_loader: The dataloader used during training
+
+        Returns:
+            None
+        """
         self._update_with_gradual_stacking_boundaries()
         self._update_with_staged_data_curriculum_boundaries(train_loader=train_loader)
 
@@ -110,6 +182,15 @@ class StagedEvaluationCallback(TrainerCallback):
                                "even though StagedEvaluationCallback was created.")
 
     def _update_with_gradual_stacking_boundaries(self):
+        """
+        Extracts growth boundary steps from the GradualStackingCallback, if present
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         # Check for Gradual Stacking Callback and get its growth steps
         for callback in self.trainer.callback_handler.callbacks:
             # Check by type name to avoid strict import dependencies
@@ -117,6 +198,15 @@ class StagedEvaluationCallback(TrainerCallback):
                 self._boundaries.update(callback.steps_at_which_model_should_be_grown)
 
     def _update_with_staged_data_curriculum_boundaries(self, train_loader):
+        """
+        Calculates and extracts stage transition boundaries from the staged data curriculum
+
+        Args:
+            train_loader: The training dataloader containing the curriculum sampler
+
+        Returns:
+            None
+        """
         # Check for Staged Data Curriculum and calculate steps from percentiles
         is_staged = (self.trainer.data_curriculum_cfg is not None and
                      self.trainer.data_curriculum_cfg.difficulty_scorer_name == "staged_data_split")
@@ -149,7 +239,8 @@ class StagedEvaluationCallback(TrainerCallback):
 class CurriculumLearningCallback(TrainerCallback):
     """
     A TrainerCallback that updates the data sampler and data collator with the current global step of training.
-    This is crucial for curriculum learning where the data sampling or processing might depend on the training progress.
+    This is crucial for curriculum learning where the data sampling or processing
+    might depend on the training progress
     """
 
     def on_train_begin(
@@ -161,15 +252,31 @@ class CurriculumLearningCallback(TrainerCallback):
         **kwargs,
     ):
         """
-        Called at the beginning of training. Sets the initial global step for the DataLoader.
+        Called at the beginning of training. Sets the initial global step for the DataLoader
+
+        Args:
+            args: The training arguments
+            state: The current TrainerState
+            control: The TrainerControl object
+            train_dataloader: The dataloader used for training
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            None
         """
         train_dataloader.global_stepnum = state.global_step
 
     def on_step_end(self, *_, train_dataloader, **kwargs) -> None:
         """
         Called at the end of each training step. Increments the global step for the sampler
-        (if it's a curriculum sampler) and the DataLoader. This ensures curriculum components
-        are aware of the current training stage.
+        (if it's a curriculum sampler) and the DataLoader
+
+        Args:
+            train_dataloader: The dataloader used for training
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            None
         """
         if isinstance(
             train_dataloader.sampler,
@@ -201,14 +308,16 @@ class CustomTrainer(Trainer):
         and curriculum learning components
 
         Args:
-            * hydra_config (BabyLMConfig): The configuration object loaded using Hydra. It contains all experimental settings
-            * dry_run (bool): Whether the experiment is being run in dry run mode
-            * args (TrainingArguments): The Hugging Face training arguments
-            * tokenizer (PreTrainedTokenizerFast): The tokenizer used for the current training run
-            * curriculum_learning_table (wandb.Table, optional): A Weights & Biases table
-                                                                 used to log detailed curriculum
-                                                                 learning progress (e.g., difficulty scores,
-                                                                 pacing function values, sampled data)
+            hydra_config: The configuration object loaded using Hydra containing all experimental settings
+            dry_run: Boolean flag indicating if the experiment is running in dry run mode
+            args: The Hugging Face training arguments
+            tokenizer: The tokenizer used for the current training run
+            curriculum_learning_table: A Weights & Biases table to log detailed curriculum learning progress
+            dev_dataset: The optional development dataset used for dynamic evaluation
+            **kwargs: Additional keyword arguments for the Hugging Face Trainer
+
+        Returns:
+            None
         """
 
         # Get configurations from the hydra config file
@@ -319,6 +428,16 @@ class CustomTrainer(Trainer):
         self.is_distributed = self.args.world_size > 1
 
     def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
+        """
+        Creates the learning rate scheduler, integrating an infinite LR schedule if configured
+
+        Args:
+            num_training_steps: The total number of training steps
+            optimizer: The optimizer used for training
+
+        Returns:
+            The initialized learning rate scheduler
+        """
         infinite_lr_config = self.hydra_config.get("infinite_lr_scheduler")
 
         if infinite_lr_config and infinite_lr_config.get("enabled", False):
@@ -343,7 +462,13 @@ class CustomTrainer(Trainer):
 
     def _get_train_sampler(self):
         """
-        Overriding this method to use custom samplers that enable data-driven curriculum pacing.
+        Retrieves the appropriate sampler for the training dataset, enabling data-driven curriculum pacing
+
+        Args:
+            None
+
+        Returns:
+            A subclass of torch.utils.data.Sampler or None if the dataset is invalid
         """
         # Validate dataset
         if self.train_dataset is None or not has_length(self.train_dataset):
@@ -359,7 +484,13 @@ class CustomTrainer(Trainer):
 
     def _create_generator(self):
         """
-        Create and seed a torch random number generator for single-process training.
+        Creates and seeds a torch random number generator for single-process training
+
+        Args:
+            None
+
+        Returns:
+            A seeded torch.Generator, or None if in a distributed setting
         """
         if self.is_distributed:
             return None  # Multi-process training handles seeding differently
@@ -378,7 +509,13 @@ class CustomTrainer(Trainer):
 
     def _get_seed(self):
         """
-        Determine the seed for distributed samplers
+        Determines the random seed to be used for distributed samplers
+
+        Args:
+            None
+
+        Returns:
+            An integer representing the random seed
         """
         return (
             self.args.data_seed
@@ -388,7 +525,14 @@ class CustomTrainer(Trainer):
 
     def _get_curriculum_sampler(self, generator, seed):
         """
-        Create a curriculum-aware sampler using difficulty scoring and pacing
+        Creates a curriculum-aware sampler using difficulty scoring and pacing functions
+
+        Args:
+            generator: The random number generator
+            seed: The integer seed used for initialization
+
+        Returns:
+            A CurriculumSampler or DistributedCurriculumSampler instance
         """
         pacing_fn = get_pacing_fn(
             self.data_curriculum_cfg.pacing_fn_name,
@@ -426,7 +570,14 @@ class CustomTrainer(Trainer):
 
     def _get_default_sampler(self, generator, seed):
         """
-        Fallback to default random or distributed sampler.
+        Creates a default random or distributed sampler when no curriculum is configured
+
+        Args:
+            generator: The random number generator
+            seed: The integer seed
+
+        Returns:
+            A RandomSampler or DistributedSampler instance
         """
         if self.is_distributed:
             return DistributedSampler(
@@ -441,14 +592,13 @@ class CustomTrainer(Trainer):
 
     def _get_ignore_columns(self, dataset) -> List[str]:
         """
-        Returns the list of columns to ignore when training. This is used to remove columns that
-        are not used for training, but are used for curriculum pacing.
+        Determines the list of dataset columns to ignore during the model's forward pass
 
         Args:
-            * dataset (:class:`~datasets.Dataset`): The dataset to use for training.
+            dataset: The dataset intended for training
 
         Returns:
-            * (List[str]): The list of columns to ignore when training.
+            A list of strings representing column names to be ignored
         """
         # Determine relevant columns for training / forward pass of the model
         self._set_signature_columns_if_needed()
@@ -463,15 +613,14 @@ class CustomTrainer(Trainer):
 
     def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """
-        Log `logs` on the various objects watching training.
-
-        Subclass and override this method to inject custom behavior.
+        Logs dictionary of metrics to the various configured logging endpoints (e.g. Weights & Biases)
 
         Args:
-            logs (`Dict[str, float]`):
-                The values to log.
-            start_time (`Optional[float]`):
-                The start of training.
+            logs: A dictionary containing the metric names and their float values
+            start_time: The optional float marking the start time of the training phase
+
+        Returns:
+            None
         """
         logs["model_total_parameters"] = sum(p.numel() for p in self.model.parameters())
         logs["train_cumulative_flops"] = self.state.total_flos
@@ -493,12 +642,13 @@ class CustomTrainer(Trainer):
 
     def get_train_dataloader(self) -> DataLoader:
         """
-        Returns the training :class:`~torch.utils.data.DataLoader`.
-        The dataset is sorted by the scoring function, if provided.
+        Constructs and returns the custom training dataloader equipped with the configured sampler
+
+        Args:
+            None
 
         Returns:
-            * (CustomDataLoader): The custom training dataloader, a subclass instance of the torch
-                Dataloader.
+            A DataLoader instance representing the custom training dataloader
         """
 
         # Ensure the training dataset is set before proceeding
@@ -538,8 +688,15 @@ class CustomTrainer(Trainer):
 
     def compute_loss(self, model, inputs, **kwargs):
         """
-        Compute and return the loss for the current training step.
-        This method also logs curriculum-related metrics.
+        Computes the loss for the current training step and logs curriculum metrics if enabled
+
+        Args:
+            model: The model being trained
+            inputs: A dictionary of batched input tensor
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            A torch.Tensor containing the computed loss value
         """
 
         # Standard Hugging Face loss computation
@@ -559,7 +716,15 @@ class CustomTrainer(Trainer):
         return loss
 
     def _check_max_steps(self):
-        """Raise an error if global_step exceeds max_steps."""
+        """
+        Validates that the current global step does not exceed the maximum allowed training steps
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         if self.state.global_step >= self.args.max_steps:
             raise Exception(
                 """
@@ -570,7 +735,15 @@ class CustomTrainer(Trainer):
             )
 
     def _should_log(self):
-        """Determine if logging should be done at the current step."""
+        """
+        Determines whether logging should occur based on the current step and logging configuration
+
+        Args:
+            None
+
+        Returns:
+            A boolean indicating True if logging should proceed.
+        """
         return (
                 self.args.logging_strategy == IntervalStrategy.STEPS
                 and self.state.global_step % self.args.logging_steps == 0
@@ -578,7 +751,13 @@ class CustomTrainer(Trainer):
 
     def _log_curriculum_metrics(self, inputs):
         """
-        Log curriculum learning metrics and sample data if applicable.
+        Calculates and pushes curriculum learning metrics and batch sample decodings to the tracking table
+
+        Args:
+            inputs: A dictionary of batched input tensors
+
+        Returns:
+            None
         """
         # Check if curriculum learning table is initialized aka some form of curriculum learning is done
         if self.curriculum_learning_table is not None:
@@ -639,7 +818,15 @@ class CustomTrainer(Trainer):
                     self.log({"curriculum_learning_table": _curriculum_learning_table})
 
     def _check_if_curriculum_metrics_were_logged(self):
-        """Check if curriculum metrics are already logged for this step."""
+        """
+        Checks the curriculum tracking table to prevent duplicate logging on the same step
+
+        Args:
+            None
+
+        Returns:
+            A boolean indicating True if metrics for the current step have already been logged
+        """
         if len(self.curriculum_learning_table.data) > 0:
             # Get the last recorded step in the table
             max_table_step = int(
@@ -655,7 +842,16 @@ class CustomTrainer(Trainer):
             return False
 
     def _decode_sample_inputs(self, inputs, num_samples: int = 5):
-        """Decode the first few input_ids from the current batch."""
+        """
+        Decodes a subset of the current batch's input token IDs into human-readable text
+
+        Args:
+            inputs: A dictionary containing the batch 'input_ids'
+            num_samples: The maximum number of sequences to decode
+
+        Returns:
+            A string containing the decoded samples separated by newlines
+        """
         decoded_samples = ""
         for i in range(min(num_samples, len(inputs["input_ids"]))):
             decoded_text = self.processing_class.decode(
@@ -669,7 +865,14 @@ class CustomTrainer(Trainer):
 
     def _compute_data_curriculum_difficulty_metrics_for_logging(self):
         """
-        Compute dynamic difficulty metrics during data curriculum learning for logging
+        Computes dynamically updating difficulty metrics from the active data curriculum sampler
+
+        Args:
+            None
+
+        Returns:
+            A tuple of metrics: (data_difficulty_percentile, data_sampled_percentile,
+            num_samples, max_score, min_score, median_score, current_stage)
         """
         # Get pacing function and difficulty scorer
         sampler = self.callback_handler.train_dataloader.sampler
@@ -711,7 +914,15 @@ class CustomTrainer(Trainer):
         )
 
     def _check_if_curriculum_table_should_be_logged(self):
-        """Check if we should log the curriculum learning table at this step."""
+        """
+        Validates whether the curriculum table object itself should be synced based on evaluation intervals
+
+        Args:
+            None
+
+        Returns:
+            A boolean indicating True if the table should be logged
+        """
         return (
                 self.args.eval_strategy == IntervalStrategy.STEPS
                 and self.state.global_step % self.args.eval_steps == 0  # type: ignore
@@ -723,14 +934,14 @@ class CustomTrainer(Trainer):
             **kwargs,  # Accepts additional keyword arguments for compatibility
     ) -> Dict[str, float]:
         """
-        Override the Trainer.evaluate() method to evaluate on BLIMP and possibly other tasks.
+        Runs evaluation pipelines, tracking memory, perplexity, and external zero-shot capabilities
 
         Args:
-            metric_key_prefix (str): Prefix for all metric names (default "eval").
-            **kwargs: Extra arguments for flexibility.
+            metric_key_prefix: A string prefix for all output metric keys
+            **kwargs: Additional keyword arguments for evaluation compatibility
 
         Returns:
-            Dict[str, float]: Metrics like loss, perplexity, task scores, speed, etc.
+            A dictionary containing the compiled evaluation metrics
         """
         # Start tracking memory usage as early as possible
         # Hugging Face has a built-in memory tracker (_memory_tracker) to record GPU/CPU RAM consumption
@@ -766,7 +977,16 @@ class CustomTrainer(Trainer):
         return metrics
 
     def evaluate_on_perplexity(self, metrics: Dict[str, float], metric_key_prefix: str):
-        """Evaluate and record perplexity metrics if enabled."""
+        """
+        Computes and updates the provided metrics dictionary with perplexity evaluations if enabled
+
+        Args:
+            metrics: The dictionary to be updated with perplexity results
+            metric_key_prefix: A string prefix for the perplexity metric keys
+
+        Returns:
+            The updated dictionary containing the new perplexity metrics
+        """
         # If perplexity evaluation is disabled just return the initial metrics
         if not self.eval_perplexity:
             return metrics
@@ -785,7 +1005,15 @@ class CustomTrainer(Trainer):
         return metrics
 
     def _simulate_perplexity_metrics(self, eval_subset) -> Dict[str, float]:
-        """Generate simulated perplexity metrics globally and per-corpus for debugging."""
+        """
+        Generates simulated perplexity metrics globally and per-corpus to aid in rapid debugging
+
+        Args:
+            eval_subset: The dataset subset used for evaluation
+
+        Returns:
+            A dictionary containing randomized floating-point perplexity metrics
+        """
         metrics = {"perplexity_mean": random.uniform(10.0, 50.0)}
 
         # Dynamically simulate for all corpora present in the dataset
@@ -797,7 +1025,15 @@ class CustomTrainer(Trainer):
         return metrics
 
     def _compute_perplexity_from_dataset(self, eval_subset) -> dict[str, float | Any]:
-        """Compute mean and std of perplexity from evaluation dataset."""
+        """
+        Executes a real perplexity evaluation across the given dataset, accumulating metrics per corpus
+
+        Args:
+            eval_subset: The preprocessed evaluation dataset
+
+        Returns:
+            A dictionary containing accurately calculated per-corpus and mean perplexity scores
+        """
         logging.info(f"Evaluating perplexity on {eval_subset.num_rows} samples...")
 
         ppl_metrics = {}
@@ -835,7 +1071,15 @@ class CustomTrainer(Trainer):
         return ppl_metrics
 
     def _run_perplexity_inference(self, eval_subset) -> Tuple[float, int]:
-        """Run inference to compute perplexity scores for each batch."""
+        """
+        Runs the forward pass on the provided dataset to extract total log-likelihood and token counts
+
+        Args:
+            eval_subset: The specific dataset partition to infer over
+
+        Returns:
+            A tuple containing (total_negative_log_likelihood, total_valid_tokens)
+        """
         eval_subset = prepare_dataset_for_ppl_inference(self, eval_subset)
 
         dataloader = DataLoader(
@@ -860,6 +1104,16 @@ class CustomTrainer(Trainer):
         return total_nll, total_tokens
 
     def _gather_distributed_metrics(self, total_nll, total_tokens):
+        """
+        Synchronizes and aggregates negative log-likelihood and token counts across all active GPUs
+
+        Args:
+            total_nll: The locally calculated total negative log-likelihood
+            total_tokens: The locally calculated total token count
+
+        Returns:
+            A tuple containing the globally aggregated (total_negative_log_likelihood, total_valid_tokens)
+        """
         # Wait for all GPUs to finish their loops
         dist.barrier()
 
@@ -876,10 +1130,13 @@ class CustomTrainer(Trainer):
 
     def _get_eval_subset(self):
         """
-        Retrieve a subset of the evaluation dataset for perplexity computation
+        Constructs a representative sub-sample of the full evaluation dataset for faster perplexity checks
+
+        Args:
+            None
 
         Returns:
-            Subset of the evaluation dataset
+            A Hugging Face Dataset representing the evaluation subset
         """
         eval_subset = self.eval_dataset.select(  # type: ignore
             range(
@@ -892,7 +1149,14 @@ class CustomTrainer(Trainer):
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         """
-        Override Trainer._save() to save the model and tokenizer.
+        Overrides the standard Trainer checkpoint saving to ensure the unwrapped base model and tokenizer are saved
+
+        Args:
+            output_dir: The string path pointing to the desired save directory
+            state_dict: The optional model state dictionary to save
+
+        Returns:
+            None
         """
         if self.args.should_save:
             super()._save(output_dir=output_dir, state_dict=state_dict)
@@ -908,7 +1172,15 @@ class CustomTrainer(Trainer):
             self.processing_class.save_pretrained(output_dir)
 
     def _save_and_sync_model(self):
-        """Save model checkpoint and synchronize across distributed processes."""
+        """
+        Forces a model checkpoint save and implements a distributed barrier to synchronize all processes
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         self.save_model(self.args.output_dir, _internal_call=True)
 
         if self.args.world_size > 1:
@@ -918,7 +1190,17 @@ class CustomTrainer(Trainer):
     def _evaluate_on_additional_tasks(
             self, metrics: Dict[str, float], metric_key_prefix: str, is_best_run: bool
     ):
-        """Evaluate on additional custom tasks and update metrics."""
+        """
+        Triggers external zero-shot diagnostic suites (like BLiMP or SuperGLUE) if configured, updating metrics
+
+        Args:
+            metrics: The core dictionary of previously collected metrics
+            metric_key_prefix: The string prefix for appending metric keys
+            is_best_run: A boolean indicating if this evaluation corresponds to the best performing checkpoint
+
+        Returns:
+            The updated dictionary containing aggregated external task results
+        """
         additional_metrics = {}
 
         inference_model_dir = os.path.join(self.args.output_dir, "lm_model")
@@ -973,7 +1255,17 @@ class CustomTrainer(Trainer):
     def _compute_speed_metrics(
             self, metrics: Dict[str, float], metric_key_prefix: str, start_time: float
     ):
-        """Compute speed-related metrics and update."""
+        """
+        Calculates iteration speed, throughput and other performance metrics to log alongside task performance
+
+        Args:
+            metrics: The current dictionary of collected metrics
+            metric_key_prefix: The string prefix for assigning speed metric keys
+            start_time: The recorded float timestamp when evaluation began
+
+        Returns:
+            The updated dictionary augmented with speed calculation metrics
+        """
         # Adjust start_time if JIT compilation time was recorded
         if f"{metric_key_prefix}_jit_compilation_time" in metrics:
             start_time += metrics[f"{metric_key_prefix}_jit_compilation_time"]
@@ -984,7 +1276,17 @@ class CustomTrainer(Trainer):
     def _record_best_model_step(
             self, metrics: Dict[str, float], metric_key_prefix: str, is_best_run: bool
     ):
-        """Record the step number of the best model checkpoint."""
+        """
+        Captures the exact global step associated with the active "best" checkpoint, if applicable
+
+        Args:
+            metrics: The current dictionary of collected evaluation metrics
+            metric_key_prefix: The string prefix to append to the step key
+            is_best_run: A boolean indicating if the current state reflects the best model
+
+        Returns:
+            The metrics dictionary updated with the associated best model step
+        """
         if is_best_run:
             step = int(self.state.best_model_checkpoint.split("checkpoint-")[-1])
             metrics[f"{metric_key_prefix}_model_step"] = step

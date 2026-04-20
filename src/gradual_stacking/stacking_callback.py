@@ -12,7 +12,26 @@ logger = logging.getLogger("Gradual Stacking")
 
 
 class GradualStackingCallback(TrainerCallback):
+    """
+    A callback that dynamically increases the depth of a neural network mid-training
+    by duplicating its middle architectural blocks according to a predefined schedule
+    """
+
     def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float, layer_per_block: int, align_with_staged_data_curriculum: bool, cleaning_optimizer_state: bool):
+        """
+        Initializes the GradualStackingCallback
+
+        Args:
+            total_training_steps: The total number of training steps scheduled
+            k_number_of_stages: The total number of architectural growth stages
+            alpha: The pacing parameter that dictates the prop-alpha growth schedule
+            layer_per_block: The number of layers in each architectural block to be duplicated
+            align_with_staged_data_curriculum: Boolean flag to synchronize model growth with data curriculum stages
+            cleaning_optimizer_state: Boolean flag to clear the optimizer momentum state after growth
+
+        Returns:
+            None
+        """
         if not isinstance(layer_per_block, int) or layer_per_block <= 0:
             raise ValueError(f"layer_per_block must be a positive integer, got {layer_per_block}")
         self.block_size = layer_per_block
@@ -32,21 +51,46 @@ class GradualStackingCallback(TrainerCallback):
         self._curriculum_alignment_is_initialized = False
 
     def on_step_begin(self, args, state, control, **kwargs):
-        """Ensures boundaries are synced with the curriculum before the first step."""
+        """
+        Ensures boundaries are synced with the curriculum before the first step
+
+        Args:
+            args: The training arguments
+            state: The current TrainerState containing the global step
+            control: The TrainerControl object
+            **kwargs: Additional keyword arguments, notably 'train_dataloader'
+
+        Returns:
+            None
+        """
         if self.align_with_staged_data_curriculum and not self._curriculum_alignment_is_initialized:
             logger.info("Aligning Gradual Stacking stage boundaries with Staged Data Curriculum...")
             self._initialize_stage_boundaries_from_dataloader(train_dataloader=kwargs.get("train_dataloader"))
 
     def _initialize_stage_boundaries_from_dataloader(self, train_dataloader):
+        """
+        Initializes and aligns the model growth stage boundaries based on the data curriculum dataloader
+
+        Args:
+            train_dataloader: The dataloader containing the staged data curriculum components
+
+        Returns:
+            None
+        """
         self._set_stage_boundaries_in_callback(train_dataloader)
         self._curriculum_alignment_is_initialized = True
 
     def _set_stage_boundaries_in_callback(self, train_dataloader):
         """
-        Calculates the step numbers where the pacing function triggers
-        a dataset stage transition.
-        """
+        Calculates the exact step numbers where the pacing function triggers
+        a dataset stage transition and updates the gradual stacking schedule to match
 
+        Args:
+            train_dataloader: The dataloader providing access to the difficulty scorer and pacing function
+
+        Returns:
+            None
+        """
         # Access difficulty scorer
         staged_difficulty_scorer = train_dataloader.sampler.difficulty_scorer
         pacing_fn = train_dataloader.sampler.pacing_fn
@@ -71,7 +115,21 @@ class GradualStackingCallback(TrainerCallback):
         logger.info(f"New step boundaries after alignment: {self.steps_at_which_model_should_be_grown}")
 
     def on_step_end(self, args, state, control, model=None, optimizer=None, **kwargs):
+        """
+        Called at the end of each training step. Verifies if the model should be grown
+        based on the predetermined schedule and executes the duplication mechanism
 
+        Args:
+            args: The training arguments
+            state: The current TrainerState containing the global step
+            control: The TrainerControl object
+            model: The model undergoing training
+            optimizer: The optimizer handling model updates
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            None
+        """
         # Check that model and optimizer is there as we need them for gradual stacking
         assert model is not None and optimizer is not None, "GradualStackingCallback was called without model/optimizer. This should not happen"
 
@@ -119,6 +177,16 @@ class GradualStackingCallback(TrainerCallback):
             dist.barrier()
 
     def _duplicate_middle_block(self, model):
+        """
+        Identifies the middle architectural block of the network, duplicates its layers
+        via deepcopy and inserts them directly following the source block
+
+        Args:
+            model: The model being manipulated
+
+        Returns:
+            A tuple containing two lists: (original_middle_block_layers, duplicated_middle_block_layers)
+        """
         # Divide model layers into blocks
         blocks = [model.model.layers[i:i + self.block_size] for i in range(0, len(model.model.layers), self.block_size)]
 
@@ -154,6 +222,18 @@ class GradualStackingCallback(TrainerCallback):
         return original_middle_block, duplicated_middle_block
 
     def _register_new_parameters_in_optimizer(self, optimizer, original_middle_block, duplicated_middle_block):
+        """
+        Manually injects the newly created neural network parameters into the
+        optimizer state to ensure they receive gradient updates during subsequent steps
+
+        Args:
+            optimizer: The training optimizer
+            original_middle_block: The list of original source layers
+            duplicated_middle_block: The list of newly duplicated layers
+
+        Returns:
+            None
+        """
         # Iterate through all layers of the duplicated block
         for original_layer, duplicated_layer in zip(original_middle_block, duplicated_middle_block):
             # Iterate through all params
@@ -166,6 +246,18 @@ class GradualStackingCallback(TrainerCallback):
             logger.info("Optimizer states have been cleared for the new stage")
 
     def _add_param_to_appropriate_optimizer_group(self, optimizer, duplicated_param, duplicated_param_name):
+        """
+        Routes a given parameter to the correct optimizer parameter group based on
+        weight decay rules (e.g. separating biases and LayerNorm parameters from weights)
+
+        Args:
+            optimizer: The training optimizer
+            duplicated_param: The parameter tensor being registered
+            duplicated_param_name: The string name of the parameter tensor
+
+        Returns:
+            None
+        """
         decay_group = optimizer.param_groups[0]["params"]
         no_decay_group = optimizer.param_groups[1]["params"] if len(optimizer.param_groups) > 1 else None
         if self._is_param_in_no_decay_group(no_decay_group, duplicated_param, duplicated_param_name):
@@ -175,6 +267,17 @@ class GradualStackingCallback(TrainerCallback):
 
 
     def _is_param_in_no_decay_group(self, no_decay_group, param, param_name):
+        """
+        Evaluates whether a parameter belongs to the weight decay exemption group
+
+        Args:
+            no_decay_group: The optimizer group designated for non-decaying parameters
+            param: The parameter tensor
+            param_name: The string name of the parameter
+
+        Returns:
+            A boolean indicating True if the parameter should be exempt from weight decay
+        """
         is_decay_group_in_optimizer = no_decay_group is not None
         is_bias_param = (param.ndim == 1 or param_name.endswith(".bias"))
         if is_decay_group_in_optimizer and is_bias_param:
@@ -183,6 +286,18 @@ class GradualStackingCallback(TrainerCallback):
             return False
 
     def _deepcopy_optimizer_state_from_param(self, optimizer, original_param, duplicated_param):
+        """
+        Copies momentum and related tracking states from an original parameter
+        in the optimizer to the corresponding duplicated parameter
+
+        Args:
+            optimizer: The training optimizer
+            original_param: The source parameter whose state is being copied
+            duplicated_param: The newly duplicated parameter inheriting the state
+
+        Returns:
+            None
+        """
         # Deepcopy optimizer state from original parameter
         if original_param in optimizer.state:
             optimizer.state[duplicated_param] = copy.deepcopy(optimizer.state[original_param])

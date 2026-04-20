@@ -34,6 +34,19 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
     """
 
     def __init__(self, proportion_mode: str = None, data_replay_mode: str = None, data_replay_fraction: float = 0.0, data_replay_decay: float = 1.0, **kwargs: Any):
+        """
+        Initializes the StagedDataSplitSorter
+
+        Args:
+            proportion_mode: Determines how stage thresholds are calculated (None, "sample", or "token")
+            data_replay_mode: Strategy for including historical data ("previous_stage_only" or "all_previous_stages")
+            data_replay_fraction: The percentage of historical data to mix into the current stage
+            data_replay_decay: The exponential decay factor applied to older stages in all-previous mode
+            **kwargs: Additional keyword arguments passed to the BaseDifficultyScorer
+
+        Returns:
+            None
+        """
         super().__init__(**kwargs)
         # Use custom order
         self.filename_to_difficulty_map = SPOKEN_FIRST_DATASET_ORDER_BABYLM_2023
@@ -58,7 +71,15 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
     @property
     def current_stage(self) -> int:
-        """Returns the current active stage (1 to NUM_STAGES)"""
+        """
+        Returns the current active stage (1 to NUM_STAGES)
+
+        Args:
+            None
+
+        Returns:
+            An integer representing the current active stage
+        """
         return self._last_active_level if self._last_active_level is not None else 1
 
 
@@ -69,7 +90,18 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
             global_stepnum: int,
             max_difficulty_percentile: float,
     ) -> Sequence[float]:
+        """
+        Calculates and retrieves the difficulty scores/weights for the requested indices
 
+        Args:
+            dataset: The dataset containing the samples to score
+            indices: The subset of indices from the dataset to be scored
+            global_stepnum: The current global training step
+            max_difficulty_percentile: The allowed difficulty percentile as determined by the pacing function
+
+        Returns:
+            A sequence of floats representing the valid sampling weights for the given indices
+        """
         indices_to_score = indices
 
         # Initialization of difficulty scores on first step
@@ -94,6 +126,16 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
             return self.filtered_difficulty_scores
 
     def _initialize_difficulty_scores(self, indices_to_score: Sequence[int], dataset: Dataset) -> None:
+        """
+        Initializes the base difficulty scores for all required indices at the start of training
+
+        Args:
+            indices_to_score: The sequence of indices that need to be scored
+            dataset: The full dataset to reference filenames from
+
+        Returns:
+            None
+        """
         data_cl_logger.info("Initializing Staged Data Split Scorer...")
         assert "filename" in dataset.column_names, "Dataset must have 'filename' column"
         self._difficulty_scores = self._get_difficulties_based_on_filename_mapping(indices_to_score=indices_to_score,
@@ -104,7 +146,13 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
     def _calculate_transition_thresholds(self, dataset: Dataset) -> None:
         """
-        Calculates the percentile thresholds where the stage transitions happen
+        Calculates the percentile thresholds where curriculum stage transitions happen based on the proportion mode
+
+        Args:
+            dataset: The full training dataset
+
+        Returns:
+            None
         """
         if self.proportion_mode is None:
             # Equal duration for every stage, e.g. [1/6, 2/6, 3/6, 4/6, 5/6]
@@ -126,6 +174,15 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
             data_cl_logger.info(f"Calculated token-proportion thresholds: {self.transition_thresholds}")
 
     def _get_corpora_sample_sizes_on_complete_dataset(self, dataset: Dataset):
+        """
+        Calculates the total number of samples belonging to each stage across the entire dataset
+
+        Args:
+            dataset: The complete training dataset
+
+        Returns:
+            A tensor containing the sample counts for each stage
+        """
         # Get the 'filename' column for every sample in the complete dataset
         filenames_for_every_sample = dataset["filename"]
 
@@ -147,7 +204,13 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
     def _get_corpora_token_sizes(self) -> torch.Tensor:
         """
-        Aggregates token counts per stage using the static mapping in stages.py
+        Aggregates token counts per stage using the static mapping defined in stages.py
+
+        Args:
+            None
+
+        Returns:
+            A tensor containing the token counts for each stage
         """
         stage_counts = torch.zeros(self.num_stages, dtype=torch.float32)
         for filename, stage in self.filename_to_difficulty_map.items():
@@ -158,15 +221,20 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
 
     def force_next_stage(self):
         """
-        Dynamically forces the scorer to advance to the next stage
+        Dynamically forces the scorer to advance to the next curriculum stage
         """
         if self._forced_stage < self.num_stages:
             self._forced_stage += 1
 
     def _determine_current_stage(self, max_difficulty_percentile: float) -> int:
         """
-        Determines current stage by iterating through list of percentiles and checking when the current difficulty
-        percentile is smaller than one of our thresholds
+        Determines the current active stage based on the given difficulty percentile and transition thresholds
+
+        Args:
+            max_difficulty_percentile: The current allowed difficulty percentile
+
+        Returns:
+            An integer representing the current active stage
         """
         normal_stage = self.num_stages
         for i, threshold in enumerate(self.transition_thresholds):
@@ -180,6 +248,15 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         return max(normal_stage, self._forced_stage)
 
     def _update_filtered_difficulty_scores_for_new_stage(self, active_difficulty_level: int) -> None:
+        """
+        Calculates and caches the specific sample weights/mask for the newly entered stage, handling replay logic
+
+        Args:
+            active_difficulty_level: The integer representing the newly active curriculum stage
+
+        Returns:
+            None
+        """
         # Use data replay (considering only the previous stage), when enabled and we're
         # at least in stage 2, as there is otherwise no previous stage
         if self.data_replay_mode == "previous_stage_only" and active_difficulty_level > 1:
@@ -212,6 +289,16 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         self._last_active_level = active_difficulty_level
 
     def _get_difficulties_based_on_filename_mapping(self, indices_to_score: Sequence[int], dataset: Dataset):
+        """
+        Retrieves the stage difficulty scores for specific dataset indices based on their filename
+
+        Args:
+            indices_to_score: The subset of indices to map to a difficulty score
+            dataset: Dataset containing 'filename' metadata
+
+        Returns:
+            A list containing the corresponding difficulty scores for each index
+        """
         # Get difficulties for desired subset based on the filename mapping
         temp_difficulty_scores = []
 
@@ -223,6 +310,15 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         return temp_difficulty_scores
 
     def _get_token_sizes_for_current_and_previous_stage(self, active_difficulty_level: int):
+        """
+        Fetches the total token counts for the current and immediately preceding stages
+
+        Args:
+            active_difficulty_level: The integer representing the current active stage
+
+        Returns:
+            A tuple containing (token_count_current_stage, token_count_previous_stage)
+        """
         token_counts = self._get_corpora_token_sizes()
 
         # Indices for token_counts tensor (0-indexed)
@@ -235,6 +331,17 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         return number_of_tokens_current_stage, number_of_tokens_previous_stage
 
     def _get_weight_mapping_for_current_and_previous_stage(self, number_of_tokens_current_stage: int, number_of_tokens_previous_stage: int, active_difficulty_level:int):
+        """
+        Calculates the normalized sampling weights for the current and previous stage
+
+        Args:
+            number_of_tokens_current_stage: The total token count of the current stage
+            number_of_tokens_previous_stage: The total token count of the previous stage
+            active_difficulty_level: The integer representing the current active stage
+
+        Returns:
+            A tensor mapping stage IDs to their final sampling weight probability
+        """
         # Calculate weight for current stage, considering data replay
         weight_current_stage = 1.0 - self.data_replay_fraction
         # Calculate weight for previous stage while taking into account the number of tokens,
@@ -249,8 +356,16 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         return weight_mapping
 
     def _get_weight_mapping_for_all_previous_weighted(self, active_difficulty_level):
+        """
+        Computes the sampling weight mapping for the current stage and all previous
+        stages using an exponential decay model
 
+        Args:
+            active_difficulty_level: The integer representing the current active stage
 
+        Returns:
+            A tensor mapping stage IDs to their calculated historical sampling weights
+        """
         number_tokens_all_stages = self._get_corpora_token_sizes()
         number_tokens_current_stage = number_tokens_all_stages[active_difficulty_level - 1]
 
@@ -273,6 +388,17 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         return weight_mapping
 
     def _calculate_decay_factors_for_all_previous_stages(self, active_difficulty_level: int, previous_stages: list[int]):
+        """
+        Calculates the normalized exponential decay factors to distribute replay probability
+        across all historical stages
+
+        Args:
+            active_difficulty_level: The integer representing the current active stage
+            previous_stages: A list of integers representing all past stages
+
+        Returns:
+            A tensor containing the normalized decay fractions summing to 1.0
+        """
         # Calculate unnormalized decay factors for all previous stages, where stage (n-1) gets decay^0,
         # stage (N-2) gets decay^1, ...
         decay_factors = torch.tensor([
@@ -285,6 +411,19 @@ class StagedDataSplitSorter(BaseDifficultyScorer):
         return normalized_decay_factors
 
     def _get_weight_mapping_for_current_and_all_previous_stages(self, prev_stages: list, number_tokens_all_stages: Tensor, decay_factors: list, weight_mapping, number_tokens_current_stage: Tensor):
+        """
+        Populates the weight mapping tensor by applying the decayed token ratios to all previous stages
+
+        Args:
+            prev_stages: A list of integers representing all historical stages
+            number_tokens_all_stages: A tensor containing the token counts of all stages
+            decay_factors: A list or tensor containing the normalized decay multipliers
+            weight_mapping: The initialized weight mapping tensor to be populated
+            number_tokens_current_stage: The token count for the currently active stage
+
+        Returns:
+            The populated weight mapping tensor holding the final sampling probabilities
+        """
         # Calculate weights for each previous stage
         for stage_number in prev_stages:
             number_tokens_stage_i = number_tokens_all_stages[stage_number - 1]

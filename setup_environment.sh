@@ -57,12 +57,12 @@ fi
 
 # ---------- 5. Install repo & submodule requirements ----------
 echo -e "${INFO}Installing repository and submodule requirements...${NC}"
-if [ -f requirements_local.txt ]; then
-    $ENV_PY -m pip install --upgrade -r requirements_local.txt -r eval_pipeline/requirements.txt
+if [ -f requirements.txt ]; then
+    $ENV_PY -m pip install --upgrade -r requirements.txt -r eval_pipeline/requirements.txt
     echo -e "${SUCCESS}Installed repository and submodule requirements!${NC}"
 else
     echo -e "${ERROR}ERROR: requirements_local.txt not found, unable to setup environment!${NC}"
-    echo -e "${WARN}Please make sure that the required packages are defined in a requirements_local.txt file${NC}"
+    echo -e "${WARN}Please make sure that the required packages are defined in a requirements.txt file${NC}"
     exit 1
 fi
 

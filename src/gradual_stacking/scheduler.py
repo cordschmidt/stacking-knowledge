@@ -4,10 +4,21 @@ from typing import List
 class PropAlphaScheduler:
     """
     Computes the prop-alpha schedule logic used for both Gradual Stacking
-    and synchronized Data Curriculum.
+    and synchronized Data Curriculum
     """
 
     def __init__(self, total_training_steps: int, k_number_of_stages: int, alpha: float):
+        """
+        Initializes the PropAlphaScheduler and computes the growth boundaries
+
+        Args:
+            total_training_steps: The absolute maximum number of training steps allocated
+            k_number_of_stages: The total number of architectural growth stages
+            alpha: The pacing parameter that dictates the duration distribution across stages
+
+        Returns:
+            None
+        """
         self._validate_args(total_training_steps, k_number_of_stages, alpha)
         self.total_training_steps = total_training_steps
         self.k_number_of_stages = k_number_of_stages
@@ -17,6 +28,17 @@ class PropAlphaScheduler:
         self.stage_boundaries = self._compute_schedule()
 
     def _validate_args(self, total_training_steps: int, k_number_of_stages: int, alpha: float):
+        """
+        Validates the initialization arguments to ensure mathematical and logical soundness
+
+        Args:
+            total_training_steps: The absolute maximum number of training steps allocated
+            k_number_of_stages: The total number of architectural growth stages
+            alpha: The pacing parameter
+
+        Returns:
+            None
+        """
         if not isinstance(total_training_steps, int) or total_training_steps <= 0:
             raise ValueError(f"total_training_steps must be a positive integer, got {total_training_steps}")
         if not isinstance(k_number_of_stages, int) or k_number_of_stages <= 1:
@@ -31,17 +53,24 @@ class PropAlphaScheduler:
 
     def _compute_schedule(self) -> List[int]:
         """
-        Computes the gradual stacking growing schedule, i.e. the steps at which the model should be grown based on the prop-alpha schedule.
+        Computes the gradual stacking growing schedule, i.e. the steps at which the model
+        should be grown based on the prop-alpha schedule
 
         Based on Saunshi et al. (2024), On the inductive bias of stacking towards improving reasoning:
 
         "For a total training budget of T steps, the schedule Prop-α spends time Tᵢ in each stage such that:
 
-            Tᵢ ∝ i^α   for all stages i ∈ [k]
+        Tᵢ ∝ i^α   for all stages i ∈ [k]
 
         Thus:
 
         Tᵢ = (i^α / Σⱼ j^α) * T"
+
+        Args:
+            None
+
+        Returns:
+            A list of integers representing the specific global steps where stage transitions occur
         """
         # Calculate unnormalized weights i^α for all stages (numerator)
         unnormalized_weights = [i ** self.alpha for i in range(1, self.k_number_of_stages + 1)]
@@ -60,14 +89,26 @@ class PropAlphaScheduler:
 
     def get_growing_steps(self) -> List[int]:
         """
-        Returns the steps at which the model should grow.
+        Returns the pre-calculated steps at which the model should grow
+
+        Args:
+            None
+
+        Returns:
+            A list of integers representing the stage boundaries
         """
         return self.stage_boundaries
 
     def get_current_stage(self, step: int) -> int:
         """
-        Returns the 0-indexed stage number for a given global step.
-        Useful for the Pacing Function to know 'where' in the curriculum we are.
+        Returns the 0-indexed stage number for a given global step
+        Useful for the Pacing Function to know 'where' in the curriculum we are
+
+        Args:
+            step: The current global training step
+
+        Returns:
+            An integer representing the current active stage index (0-indexed)
         """
         for i, boundary in enumerate(self.stage_boundaries):
             if step < boundary:
@@ -77,7 +118,17 @@ class PropAlphaScheduler:
 
     def get_compute_equivalent_steps(self, baseline_steps: int, baseline_params: int, number_of_static_non_embedding_params: int, number_of_params_per_block: int):
         """
-        Calculates the number of compute equivalent steps based on the given prop-alpha schedule in order to align training duration computationally
+        Calculates the number of compute-equivalent steps based on the given prop-alpha
+        schedule in order to align training duration computationally with a fixed-size baseline
+
+        Args:
+            baseline_steps: The total training steps used for the standard baseline model
+            baseline_params: The total number of non-embedding parameters in the baseline model
+            number_of_static_non_embedding_params: The initial number of static non-embedding parameters
+            number_of_params_per_block: The parameter count of the specific network block duplicated per stage
+
+        Returns:
+            An integer representing the compute-equivalent step limit for the stacked model
         """
         # Calculate weights for each stage
         unnormalized_weights = [i ** self.alpha for i in range(1, self.k_number_of_stages + 1)]

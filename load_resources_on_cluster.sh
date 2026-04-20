@@ -17,4 +17,4 @@ conda init
 conda activate py313
 
 # Execute python test script
-~/miniconda3/envs/py313/bin/python load_rescources_on_cluster.py
+~/miniconda3/envs/py313/bin/python load_resources_on_cluster.py

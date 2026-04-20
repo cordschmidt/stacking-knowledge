@@ -105,7 +105,6 @@ class DatasetPreprocessor:
 
             # For Causal LM's we need labels, which are in fact a copy of the input id's
             # During loss calculation we need to ignore padded tokens, which is done by setting them to -100
-            # TODO: Normally done wihtin data collator, but unsure if this would work since we're using base_collator_fn during curriculum learning, have to check that
             # The required shift within the labels is done internally by the model during loss calculation, so no need to do that here
             labels = [
                 (tok if tok != pad_token_id else -100)

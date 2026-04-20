@@ -21,6 +21,16 @@ DRY_RUN_SUBSAMPLE_FACTOR = 1000 // (10 if torch.cuda.device_count() > 1 else 1)
 logger = logging.getLogger(__name__)
 
 def load_dataset_model_and_tokenizer(cfg: BabyLMConfig):
+    """
+    Loads the HuggingFace dataset, tokenizer, and initializes the base model
+    according to the provided configuration
+
+    Args:
+        cfg: The BabyLM configuration object containing dataset and model settings
+
+    Returns:
+        A tuple containing (model, tokenizer, dataset)
+    """
     # Loading dataset from huggingface hub
     logger.info("Loading dataset")
     dataset: DatasetDict = load_dataset(
@@ -50,6 +60,18 @@ def load_dataset_model_and_tokenizer(cfg: BabyLMConfig):
     return model, tokenizer, dataset
 
 def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
+    """
+    Preprocesses the raw dataset splits using the configured tokenizer and
+    handles dry-run subsampling if enabled in the configuration
+
+    Args:
+        cfg: The BabyLM configuration object
+        tokenizer: The initialized HuggingFace tokenizer
+        dataset: The raw HuggingFace DatasetDict containing train, validation and test splits
+
+    Returns:
+        A tuple of preprocessed datasets: (train_dataset, eval_dataset, dev_dataset)
+    """
     # Preprocess the data
     logger.info("Preprocessing data")
     data_preprocessor = DatasetPreprocessor(cfg, tokenizer)
@@ -102,12 +124,17 @@ def preprocess_data(cfg: BabyLMConfig, tokenizer, dataset):
 
 def stratified_subsample_by_corpus(dataset: Dataset, subsample_factor: int, corpora_column_name: str = "filename", seed: int = 42) -> Dataset:
     """
-    Subsample a HuggingFace Dataset while preserving corpus distribution.
+    Subsamples a HuggingFace Dataset while preserving the proportional
+    distribution of samples across different corpora
 
-    :param dataset: HuggingFace Dataset to subsample
-    :param subsample_factor: Integer, keep ~1/subsample_factor of each corpus (minimum 1 sample per corpus)
-    :param corpora_column_name: Column name holding the corpus identifier (e.g., "filename")
-    :return: A new Dataset containing the subsampled rows
+    Args:
+        dataset: The HuggingFace Dataset to subsample
+        subsample_factor: The integer factor by which to reduce the dataset (e.g., 10 means keeping 1/10th)
+        corpora_column_name: The column name identifying the corpus for each sample
+        seed: The random seed for reproducible sampling
+
+    Returns:
+        A new, subsampled HuggingFace Dataset
     """
 
     # Use a local RNG instance to avoid global state interference
@@ -139,11 +166,16 @@ def stratified_subsample_by_corpus(dataset: Dataset, subsample_factor: int, corp
 
 def log_corpus_distribution(dataset, name="dataset", corpus_col_name="filename") -> None:
     """
-    Log the distribution of samples across different corpora in a HuggingFace Dataset
+    Calculates and logs the distribution of samples across different corpora
+    within a given dataset split
 
-    :param dataset: HuggingFace Dataset whose corpus distribution should be logged
-    :param name: Label for the dataset used in logging output, e.g. "train_dataset"
-    :param corpus_col_name: Column name containing the corpus identifier
+    Args:
+        dataset: The HuggingFace Dataset to analyze
+        name: A string label for the dataset used in the log output (e.g., "train_dataset")
+        corpus_col_name: The column name identifying the corpus for each sample
+
+    Returns:
+        None
     """
     # Count how many samples belong to each corpus
     counts_per_corpus = Counter(dataset[corpus_col_name])
@@ -157,6 +189,17 @@ def log_corpus_distribution(dataset, name="dataset", corpus_col_name="filename")
 
 
 def print_model_stats(model, name="Model"):
+    """
+    Calculates and logs detailed parameter statistics for the provided model,
+    separating embedding, non-embedding, and vocabulary parameters
+
+    Args:
+        model: The initialized neural network model
+        name: A string label for the model used in the log output
+
+    Returns:
+        None
+    """
     num_layers = len(model.model.layers)
     total_params = sum(p.numel() for p in model.parameters())
 
@@ -175,8 +218,14 @@ def print_model_stats(model, name="Model"):
 
 def truncate_model_if_best_checkpoint_size_differs(trainer):
     """
-    Prevent erroneous evaluation results for gradual stacking, as model size
-    differs from the model size during the best checkpoint
+    Checks if the current model size differs from the best checkpoint's model size
+    (due to gradual stacking) and truncates the current model to match it to prevent evaluation errors
+
+    Args:
+        trainer: The HuggingFace Trainer instance containing the state and model
+
+    Returns:
+        None
     """
     if trainer.state.best_model_checkpoint is not None:
         model = unwrap_model(trainer.model)
@@ -193,6 +242,18 @@ def truncate_model_if_best_checkpoint_size_differs(trainer):
                 f"Unexpected model size: Current model has fewer layers ({number_of_layers_current_model}) than best checkpoint ({number_of_layers_best_model})")
 
 def truncate_model(model, number_of_layers_current_model, number_of_layers_best_model):
+    """
+    Truncates the model architecture by removing the most recently added layers
+    to match a target number of layers
+
+    Args:
+        model: The neural network model to be truncated
+        number_of_layers_current_model: The current integer count of hidden layers
+        number_of_layers_best_model: The target integer count of hidden layers to retain
+
+    Returns:
+        None
+    """
     logger.info(
         f"Truncate model from {number_of_layers_current_model} down to {number_of_layers_best_model} layers")
     model.model.layers = model.model.layers[:number_of_layers_best_model]
@@ -201,6 +262,16 @@ def truncate_model(model, number_of_layers_current_model, number_of_layers_best_
     model.config.num_hidden_layers = number_of_layers_best_model
 
 def determine_number_of_layers_for_current_and_best_model(trainer, model):
+    """
+    Extracts the layer counts for both the active model and the best saved checkpoint
+
+    Args:
+        trainer: The HuggingFace Trainer instance
+        model: The active model
+
+    Returns:
+        A tuple of integers: (number_of_layers_current_model, number_of_layers_best_model)
+    """
     checkpoint_dir = trainer.state.best_model_checkpoint
 
     # Check how many layers best checkpoint model has

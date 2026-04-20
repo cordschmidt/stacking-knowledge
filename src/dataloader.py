@@ -1,5 +1,4 @@
 """ Custom Dataloading comptaible with Curriculum Learning """
-# TODO: Check if this whole thing can be removed, as only now the ignore columns thing is custom logic
 
 import logging
 

@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 
 def load_dataset_from_huggingface(cfg: BabyLMConfig):
+    """
+    Loads the designated dataset from the Hugging Face Hub based on the provided configuration
+
+    Args:
+        cfg: The BabyLM configuration object containing dataset settings
+
+    Returns:
+        A DatasetDict containing the loaded Hugging Face dataset splits
+    """
     dataset: DatasetDict = load_dataset(
         cfg.dataset.name,
         cfg.dataset.subconfig,
@@ -27,12 +36,32 @@ def load_dataset_from_huggingface(cfg: BabyLMConfig):
     return dataset
 
 def preprocess_dataset_for_tokenizer(dataset):
+    """
+    Prepares the dataset for tokenizer training by removing all non-text columns
+
+    Args:
+        dataset: The raw DatasetDict loaded from Hugging Face
+
+    Returns:
+        A DatasetDict stripped of all columns except for the 'text' column
+    """
     # Remove non text columns
     non_text_columns = [col for col in dataset.column_names["train"] if col != "text"]
     dataset = dataset.remove_columns(non_text_columns)
     return dataset
 
 def train_bpe_tokenizer(dataset, vocab_size, bpe_tokenizer_json_path):
+    """
+    Initializes, trains and saves a Byte-Pair Encoding (BPE) tokenizer using the provided dataset
+
+    Args:
+        dataset: The preprocessed DatasetDict containing the text data
+        vocab_size: The integer representing the target vocabulary size
+        bpe_tokenizer_json_path: The string file path where the raw trained tokenizer JSON will be saved
+
+    Returns:
+        None
+    """
     # Initialize tokenizer with BPE model
     tokenizer = Tokenizer(models.BPE())
 
@@ -57,6 +86,16 @@ def train_bpe_tokenizer(dataset, vocab_size, bpe_tokenizer_json_path):
     tokenizer.save(bpe_tokenizer_json_path, pretty=True)
 
 def save_tokenizer_as_llama_tokenizer(bpe_tokenizer_json_path, llama_tokenizer_save_path):
+    """
+    Wraps the raw trained BPE tokenizer JSON into a LlamaTokenizerFast class and saves it
+
+    Args:
+        bpe_tokenizer_json_path: The string path to the raw trained BPE tokenizer JSON file
+        llama_tokenizer_save_path: The string directory path where the Hugging Face compatible LLaMA tokenizer will be saved
+
+    Returns:
+        None
+    """
     # Create and save the new tokenizer as a LlamaTokenizerFast
     llama_tokenizer = LlamaTokenizerFast(
         tokenizer_file=bpe_tokenizer_json_path,
@@ -69,6 +108,15 @@ def save_tokenizer_as_llama_tokenizer(bpe_tokenizer_json_path, llama_tokenizer_s
     print(f"LLaMA tokenizer saved to {llama_tokenizer_save_path}")
 
 def upload_tokenizer_to_hf(llama_tokenizer_save_path):
+    """
+    Creates a repository on the Hugging Face Hub and uploads the saved LLaMA tokenizer folder
+
+    Args:
+        llama_tokenizer_save_path: The string directory path containing the LLaMA tokenizer files to upload
+
+    Returns:
+        None
+    """
     repo_id = f"stacking-babylm-2025/{llama_tokenizer_save_path}"
     api = HfApi(token=os.getenv("HF_WRITE_TOKEN"))
     api.create_repo(
@@ -84,6 +132,16 @@ def upload_tokenizer_to_hf(llama_tokenizer_save_path):
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="config")
 def main(cfg: BabyLMConfig):
+    """
+    The main execution pipeline for setting up the environment, loading/preprocessing data,
+    training the tokenizer, and uploading it to Hugging Face
+
+    Args:
+        cfg: The BabyLM configuration object instantiated by Hydra
+
+    Returns:
+        None
+    """
     setup_environment(cfg)
     dataset = load_dataset_from_huggingface(cfg)
     dataset = preprocess_dataset_for_tokenizer(dataset)

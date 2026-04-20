@@ -12,11 +12,30 @@ logger = logging.getLogger(__name__)
 
 
 def disable_wandb():
+    """
+    Disables Weights & Biases logging by setting the appropriate environment variables
+
+    Args:
+        None
+
+    Returns:
+        None
+    """
     # Disable wandb by setting environment variables so no logs are sent remotely
     os.environ["WANDB_DISABLED"] = "true"
     os.environ["WANDB_MODE"] = "disabled"
 
 def setup_wandb_environment(cfg: BabyLMConfig):
+    """
+    Configures the Weights & Biases environment variables, handles offline mode logging
+    and sets up run resumption if specified in the configuration
+
+    Args:
+        cfg: The BabyLM configuration object containing experiment settings
+
+    Returns:
+        A string representing the Weights & Biases user entity
+    """
     # Log locally first (e.g., cluster with no internet) and sync later
     if cfg.experiment.wandb_log_locally:
         os.environ["WANDB_MODE"] = "offline"
@@ -46,6 +65,17 @@ def setup_wandb_environment(cfg: BabyLMConfig):
 
 
 def init_wandb_and_curriculum_table(cfg: BabyLMConfig, wandb_user: str):
+    """
+    Initializes the Weights & Biases run exclusively on the main process and creates
+    or retrieves a table for tracking curriculum learning progression
+
+    Args:
+        cfg: The BabyLM configuration object containing experiment settings
+        wandb_user: A string representing the Weights & Biases user entity
+
+    Returns:
+        A wandb.Table object for logging curriculum data, or None if not executing on the main process
+    """
     # Initialize wandb only on main process (rank 0) to avoid duplicate logs
     if int(os.environ.get("RANK", "0")) != 0:
         return None
@@ -88,6 +118,16 @@ def init_wandb_and_curriculum_table(cfg: BabyLMConfig, wandb_user: str):
     return wandb.Table(columns=table_columns)
 
 def enable_wandb_logging(cfg: BabyLMConfig):
+    """
+    Master function to enable or disable Weights & Biases logging based on the
+    configuration, and initialize the curriculum tracking table if active
+
+    Args:
+        cfg: The BabyLM configuration object containing experiment settings
+
+    Returns:
+        A wandb.Table object if logging is enabled and initialized, otherwise None
+    """
     # If running in offline mode (e.g., no internet or want to disable wandb)
     if cfg.experiment.offline_run:
         # disable wandb by setting environment variables so no logs are sent remotely

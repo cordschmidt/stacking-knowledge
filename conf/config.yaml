@@ -1,8 +1,8 @@
 defaults: 
   - base_config
   - _self_
-  - model: llama_100M
-  - tokenizer: llama_bpe_8192
+  - model: llama_15M
+  - tokenizer: llama_bpe_3072
   - data_curriculum: linear_staged_data_split
 
 dataset: 
@@ -11,7 +11,7 @@ dataset:
 
 model:
   model_kwargs:
-    vocab_size: 8192 # 2048 or 8192 -> 2^11 or 2^13 | 128* or 128*78=9984
+    vocab_size: 3072
 
 experiment: 
   seed: 42
@@ -30,7 +30,7 @@ data_preprocessing:
   max_input_length: 128
 
 trainer:
-  batch_size: 32 # across 4 GPUs gives an effective batch size of 128
+  batch_size: 32
   lr_scheduler_type: "cosine_with_min_lr"
   lr_scheduler_kwargs: {"min_lr": 1e-4}
   lr: 1e-3

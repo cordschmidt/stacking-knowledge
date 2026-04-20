@@ -5,7 +5,25 @@ logger = logging.getLogger("Data Curriculum")
 
 
 class DynamicCurriculumCallback(TrainerCallback):
+    """
+    A callback that actively monitors the dev dataset for perplexity plateauing
+    and dynamically forces the data curriculum to advance to the next stage to prevent overfitting
+    """
+
     def __init__(self, trainer, dev_dataset, eval_steps, subset_size, patience):
+        """
+        Initializes the DynamicCurriculumCallback
+
+        Args:
+            trainer: The Hugging Face Trainer instance
+            dev_dataset: The complete dev dataset used to evaluate perplexity
+            eval_steps: The frequency (in training steps) at which perplexity is evaluated
+            subset_size: The maximum number of samples to evaluate from the dev dataset to save compute
+            patience: The number of consecutive evaluations with non-improving perplexity before triggering a stage transition
+
+        Returns:
+            None
+        """
         self.trainer = trainer
         self.eval_steps = eval_steps
         self.patience = patience
@@ -23,6 +41,19 @@ class DynamicCurriculumCallback(TrainerCallback):
         self.dev_dataset = dev_dataset.select(range(process_index, num_rows, step_size))
 
     def on_step_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
+        """
+        Called at the end of each training step to check for evaluation boundaries,
+        calculate perplexity, and potentially trigger curriculum progression
+
+        Args:
+            args: The training arguments
+            state: The current TrainerState containing step metrics
+            control: The TrainerControl object to modify training flow
+            **kwargs: Additional keyword arguments, including the training dataloader
+
+        Returns:
+            None
+        """
         scheduler = self.trainer.lr_scheduler
         train_loader = kwargs.get("train_dataloader")
 
@@ -44,7 +75,15 @@ class DynamicCurriculumCallback(TrainerCallback):
 
     def _handle_dynamic_decay_termination(self, scheduler, state: TrainerState, control: TrainerControl) -> bool:
         """
-        Checks if training is in the decay phase and should terminate early
+        Checks if the training is currently in an exponential decay phase and should be terminated early
+
+        Args:
+            scheduler: The learning rate scheduler instance
+            state: The current TrainerState
+            control: The TrainerControl object
+
+        Returns:
+            A boolean indicating True if training was successfully terminated, False otherwise
         """
         if hasattr(scheduler, "in_dynamic_decay") and scheduler.in_dynamic_decay:
             if state.global_step >= scheduler.dynamic_end_step:
@@ -57,7 +96,13 @@ class DynamicCurriculumCallback(TrainerCallback):
 
     def _get_scorer_info(self, train_loader):
         """
-        Safely extracts the difficulty scorer and stage information
+        Safely extracts the difficulty scorer and curriculum stage information from the dataloader
+
+        Args:
+            train_loader: The data loader used for training
+
+        Returns:
+            A tuple containing (scorer_instance, current_stage_integer, total_num_stages_integer)
         """
         scorer = train_loader.sampler.difficulty_scorer
         return scorer, scorer.current_stage, scorer.num_stages
@@ -65,7 +110,18 @@ class DynamicCurriculumCallback(TrainerCallback):
     def update_last_stage_scheduler_budget_when_triggered(self, current_stage: int, num_stages: int, state: TrainerState, scheduler,
                                                           max_steps: int):
         """
-        Updates the scheduler budget if the final stage has just begun
+        Informs the infinite learning rate scheduler if the final curriculum stage has been
+        triggered so it can accurately calculate its final decay budget
+
+        Args:
+            current_stage: The current active curriculum stage
+            num_stages: The total number of stages in the curriculum
+            state: The current TrainerState
+            scheduler: The learning rate scheduler instance
+            max_steps: The absolute maximum number of training steps
+
+        Returns:
+            None
         """
         if current_stage == num_stages and not self.last_stage_triggered:
             self.last_stage_triggered = True
@@ -75,13 +131,25 @@ class DynamicCurriculumCallback(TrainerCallback):
 
     def _is_eval_step(self, state: TrainerState) -> bool:
         """
-        Determines if the current step is an evaluation step
+        Determines if the current global step aligns with the predefined evaluation frequency
+
+        Args:
+            state: The current TrainerState
+
+        Returns:
+            A boolean indicating True if an evaluation should occur, False otherwise
         """
         return state.global_step > 0 and state.global_step % self.eval_steps == 0
 
     def _evaluate_dev_perplexity(self, state: TrainerState) -> float:
         """
-        Calculates and returns the perplexity on the dev subset
+        Calculates and logs the mean perplexity of the model on the pre-selected development subset
+
+        Args:
+            state: The current TrainerState
+
+        Returns:
+            A float representing the calculated mean perplexity
         """
         logger.info(
             f"Step {state.global_step}: Calculating Dev Perplexity on subset of {len(self.dev_dataset)} samples..."
@@ -97,7 +165,19 @@ class DynamicCurriculumCallback(TrainerCallback):
     def _check_and_handle_overfitting(self, current_ppl: float, current_stage: int, num_stages: int, scorer,
                                       state: TrainerState, scheduler):
         """
-        Tracks consecutive perplexity increases and triggers stage progression or early termination
+        Tracks consecutive perplexity increases on the dev set and triggers either a stage
+        progression or early termination if the patience threshold is exceeded
+
+        Args:
+            current_ppl: The newly calculated perplexity float
+            current_stage: The current active curriculum stage
+            num_stages: The total number of stages
+            scorer: The difficulty scorer instance managing data transitions
+            state: The current TrainerState
+            scheduler: The learning rate scheduler instance
+
+        Returns:
+            None
         """
         if current_ppl > self.best_dev_ppl:
             self.consecutive_increases += 1
@@ -113,7 +193,15 @@ class DynamicCurriculumCallback(TrainerCallback):
 
     def _force_next_stage(self, scorer, state: TrainerState, current_stage: int):
         """
-        Forces the curriculum to advance to the next stage due to overfitting
+        Forces the data curriculum scorer to advance prematurely due to detected overfitting
+
+        Args:
+            scorer: The difficulty scorer instance
+            state: The current TrainerState
+            current_stage: The current active curriculum stage
+
+        Returns:
+            None
         """
         logger.info(f"Overfitting! Forcing stage {current_stage} -> {current_stage + 1}")
         scorer.force_next_stage()
@@ -123,7 +211,15 @@ class DynamicCurriculumCallback(TrainerCallback):
 
     def _force_early_termination(self, scheduler, state: TrainerState):
         """
-        Triggers the final exponential decay phase if overfitting occurs in the final stage
+        Triggers the final exponential decay phase of the learning rate scheduler if
+        overfitting occurs during the final data stage
+
+        Args:
+            scheduler: The learning rate scheduler instance
+            state: The current TrainerState
+
+        Returns:
+            None
         """
         logger.info("Overfitting in final stage, forcing early termination...")
         steps_spent = state.global_step - self.current_stage_start_step
